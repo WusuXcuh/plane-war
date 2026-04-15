@@ -522,7 +522,7 @@ class Game:
                                     # 生成小陨石
                                     for _ in range(piece_count):
                                         # 新陨石必须比原陨石小（小于原陨石等级）
-                                        new_kind = random.randint(0, e.kind - 2)
+                                        new_kind = random.randint(0, e.kind - 1)
                                         # 计算新陨石的位置（在原陨石附近）
                                         new_x = e.x + random.randint(-e.W//4, e.W//4)
                                         new_y = e.y + random.randint(-e.H//4, e.H//4)
