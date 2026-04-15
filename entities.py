@@ -85,7 +85,7 @@ class Player:
 
 class Enemy:
     """敌人类"""
-    def __init__(self, game, kind=None):
+    def __init__(self, game, kind=None, meteorite_img=None):
         self.game = game
         # 随机生成陨石大小（0-4）
         if kind is None:
@@ -95,13 +95,18 @@ class Enemy:
         else:
             self.kind = kind
         
-        # 为这个敌人随机分配一张陨石图片
-        if game.METEORITE_IMG_CACHE:
+        # 为这个敌人选择一张陨石图片，碎裂子陨石默认继承父级图片
+        if meteorite_img is not None:
+            self.meteorite_img = meteorite_img
+        elif game.METEORITE_IMG_CACHE:
             self.meteorite_img = random.choice(list(game.METEORITE_IMG_CACHE.values()))
-            # 创建图片的mask用于碰撞检测
-            self.meteorite_mask = pygame.mask.from_surface(self.meteorite_img)
         else:
             self.meteorite_img = None
+
+        # 创建图片的mask用于碰撞检测
+        if self.meteorite_img:
+            self.meteorite_mask = pygame.mask.from_surface(self.meteorite_img)
+        else:
             self.meteorite_mask = None
         
         # 根据大小调整陨石尺寸（使用实际图片尺寸）

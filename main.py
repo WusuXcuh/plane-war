@@ -515,8 +515,10 @@ class Game:
                                     base_max_pieces = int(min(4, e.kind * 1.5))
                                     base_min_pieces = max(1, e.kind - 1)
                                     # 根据难度增加数量
-                                    max_pieces = int(min(6, base_max_pieces * piece_multiplier))
+                                    max_pieces = max(1, int(min(6, base_max_pieces * piece_multiplier)))
                                     min_pieces = max(1, int(base_min_pieces * piece_multiplier))
+                                    if min_pieces > max_pieces:
+                                        min_pieces = max_pieces
                                     piece_count = random.randint(min_pieces, max_pieces)
                                     
                                     # 生成小陨石
@@ -526,8 +528,8 @@ class Game:
                                         # 计算新陨石的位置（在原陨石附近）
                                         new_x = e.x + random.randint(-e.W//4, e.W//4)
                                         new_y = e.y + random.randint(-e.H//4, e.H//4)
-                                        # 创建新陨石
-                                        new_enemy = Enemy(self, kind=new_kind)
+                                        # 创建新陨石并继承父陨石图片，确保碎裂后真正更小
+                                        new_enemy = Enemy(self, kind=new_kind, meteorite_img=e.meteorite_img)
                                         new_enemy.x = new_x
                                         new_enemy.y = new_y
                                         # 调整新陨石的速度：向下方-90~90度内的随机角度，速度为原速度的2.5倍
