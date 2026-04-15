@@ -223,7 +223,7 @@ class Interfaces:
                 r["x"] = (r["x"] + r["vx"]) % self.game.WIDTH
                 r["y"] = (r["y"] + r["vy"]) % self.game.HEIGHT
                 r["rotation"] += r["rotation_speed"]
-                self.game.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"])
+                self.game.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=self.game._get_random_meteorite_image())
             rock_surf.set_alpha(60)
             self.game.screen.blit(rock_surf, (0, 0))
             
@@ -360,7 +360,7 @@ class Interfaces:
                 r["x"] = (r["x"] + r["vx"]) % self.game.WIDTH
                 r["y"] = (r["y"] + r["vy"]) % self.game.HEIGHT
                 r["rotation"] += r["rotation_speed"]
-                self.game.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"])
+                self.game.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=self.game._get_random_meteorite_image())
             rock_surf.set_alpha(60)
             self.game.screen.blit(rock_surf, (0, 0))
             

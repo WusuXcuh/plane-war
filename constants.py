@@ -25,7 +25,7 @@ PLAYER_WIDTH = 60
 PLAYER_HEIGHT = 72
 PLAYER_SPEED = 5
 PLAYER_SHOOT_CD = 8  # 帧
-PLAYER_IMAGE = "我方飞机.png"
+PLAYER_IMAGE = "pictures/plane/我方飞机.png"
 
 # 界面设置
 RETURN_BUTTON_RECT = (WIDTH - 115, 60, 100, 40)

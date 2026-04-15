@@ -4,7 +4,7 @@ import sys
 import math
 import os
 import datetime
-from constants import WIDTH, HEIGHT, FPS, COLORS, RETURN_BUTTON_RECT
+from constants import WIDTH, HEIGHT, FPS, COLORS, RETURN_BUTTON_RECT, PLAYER_IMAGE
 from entities import Player, Enemy, Bullet
 from interfaces import Interfaces
 from utils import create_button_surface, point_in_polygon
@@ -32,9 +32,9 @@ class Game:
         self.COLORS = COLORS
         
         # 陨石大小配置（0=最小 … 4=最大）
-        self.SIZE_SCALE = [0.45, 0.80, 1.20, 1.75, 2.50]      # 相对基础形状的缩放
+        self.SIZE_SCALE = [0.135, 0.24, 0.36, 0.525, 0.75]      # 相对基础形状的缩放（缩小到30%）
         self.SIZE_HP = [1, 1, 2, 3, 5]                       # 血量
-        self.SIZE_SCORE = [30, 25, 40, 60, 120]              # 得分（最小陨石30分，第二小陨石25分，中等大小陨石40分）
+        self.SIZE_SCORE = [60, 50, 80, 120, 240]              # 得分翻倍（最小陨石60分，第二小陨石50分，中等大小陨石80分）
         self.SIZE_SPEEDS = [(3.2,5.5),(2.4,4.0),(1.7,3.2),(1.0,2.0),(0.6,1.2)]  # 速度范围
         
         # 屏幕和时钟
@@ -51,6 +51,10 @@ class Game:
         self.PLAYER_IMG = self._load_player_image()
         self.PLAYER_MASK = pygame.mask.from_surface(self.PLAYER_IMG, 200)
         self.RETURN_BUTTON_RECT = pygame.Rect(*RETURN_BUTTON_RECT)
+        
+        # 加载陨石图片缓存
+        self.METEORITE_IMG_CACHE = {}
+        self._load_meteorite_images()
         
         # 星空背景
         self.stars = [(random.randint(0, self.WIDTH), random.randint(0, self.HEIGHT), random.random()) for _ in range(120)]
@@ -103,7 +107,7 @@ class Game:
     
     def _load_player_image(self):
         """加载玩家飞机图片，保持原始长宽比例"""
-        path = os.path.join(os.path.dirname(__file__), "我方飞机.png")
+        path = os.path.join(os.path.dirname(__file__), PLAYER_IMAGE)
         raw = pygame.image.load(path).convert_alpha()
         
         # 计算原始图片的宽高比
@@ -118,13 +122,69 @@ class Game:
         
         return pygame.transform.smoothscale(raw, (target_width, target_height))
     
+    def _load_meteorite_images(self):
+        """加载所有陨石图片"""
+        meteorite_dir = os.path.join(os.path.dirname(__file__), "pictures/meteorite")
+        if not os.path.exists(meteorite_dir):
+            log(f"陨石图片目录不存在: {meteorite_dir}")
+            return
+        
+        # 获取目录中所有 PNG 文件
+        image_files = [f for f in os.listdir(meteorite_dir) if f.endswith('.png')]
+        if not image_files:
+            log("陨石目录中没有找到任何图片")
+            return
+        
+        # 加载所有图片
+        for img_file in image_files:
+            try:
+                path = os.path.join(meteorite_dir, img_file)
+                img = pygame.image.load(path).convert_alpha()
+                self.METEORITE_IMG_CACHE[img_file] = img
+                log(f"成功加载陨石图片: {img_file}")
+            except Exception as e:
+                log(f"加载陨石图片 {img_file} 失败: {e}")
+    
+    def _get_random_meteorite_image(self):
+        """获取随机陨石图片"""
+        if not self.METEORITE_IMG_CACHE:
+            return None
+        return random.choice(list(self.METEORITE_IMG_CACHE.values()))
+    
     def draw_player(self, surf, cx, cy):
         """绘制玩家飞机"""
         w, h = self.PLAYER_IMG.get_size()
         surf.blit(self.PLAYER_IMG, (cx - w // 2, cy - h // 2))
     
-    def draw_enemy(self, surf, cx, cy, size=1, rotation=0):
+    def draw_enemy(self, surf, cx, cy, size=1, rotation=0, img=None):
         """绘制敌人（陨石）"""
+        if img:
+            # 使用图片绘制陨石
+            sc = self.SIZE_SCALE[size]
+            img_width, img_height = img.get_size()
+            
+            # 计算缩放后的尺寸
+            scaled_width = int(img_width * sc)
+            scaled_height = int(img_height * sc)
+            
+            # 缩放图片
+            scaled_img = pygame.transform.smoothscale(img, (scaled_width, scaled_height))
+            
+            # 旋转图片（转换为度数）
+            rotation_deg = int(rotation * 180 / math.pi)
+            rotated_img = pygame.transform.rotate(scaled_img, rotation_deg)
+            
+            # 获取旋转后的矩形
+            rect = rotated_img.get_rect(center=(cx, cy))
+            
+            # 绘制到表面
+            surf.blit(rotated_img, rect.topleft)
+        else:
+            # 如果没有图片，使用多边形作为备选方案
+            self._draw_enemy_polygon(surf, cx, cy, size, rotation)
+    
+    def _draw_enemy_polygon(self, surf, cx, cy, size=1, rotation=0):
+        """绘制敌人多边形（备选方案）"""
         sc = self.SIZE_SCALE[size]
         
         # 颜色随大小变深
@@ -381,42 +441,64 @@ class Game:
                 expanded_e_h = e.H + 10
                 
                 if b.x + b.W > expanded_e_x and b.x < expanded_e_x + expanded_e_w and b.y + b.H > expanded_e_y and b.y < expanded_e_y + expanded_e_h:
-                    # 计算陨石的中心位置
-                    center_x = e.x + e.W // 2
-                    center_y = e.y + e.H // 2
-                    
-                    # 计算陨石的实际多边形顶点（考虑旋转和缩放）
-                    sc = self.SIZE_SCALE[e.kind]
-                    rotation = e.rotation
-                    
-                    def sp(x, y):
-                        # 应用旋转
-                        angle = rotation
-                        rx = x * math.cos(angle) - y * math.sin(angle)
-                        ry = x * math.sin(angle) + y * math.cos(angle)
-                        return (center_x + int(rx * sc), center_y + int(ry * sc))
-                    
-                    # 陨石的多边形顶点
-                    pts = [sp(-13,-24), sp(8,-26), sp(24,-10), sp(26, 8),
-                           sp(13, 26), sp(-8,29), sp(-24, 13), sp(-29,-5)]
-                    
-                    # 检查子弹是否与陨石多边形相交
-                    # 首先检查子弹中心是否在多边形内
-                    bullet_center_x = b.x + b.W // 2
-                    bullet_center_y = b.y + b.H // 2
-                    
-                    # 检查子弹中心是否在陨石多边形内
-                    if point_in_polygon(bullet_center_x, bullet_center_y, pts):
-                        bullets.remove(b)
-                        # 减少陨石生命值
-                        e.hp -= 1
-                        
-                        # 计算碰撞点（使用子弹位置）
-                        collision_x = bullet_center_x
-                        collision_y = bullet_center_y
-                        
-                        # 子弹碰到陨石时总是产生小爆炸
-                        particles += self.make_explosion(collision_x, collision_y, n=8, r_range=(2, 6))
+                    # 子弹与陨石的碰撞检测（使用mask）
+                    if e.meteorite_img:
+                        try:
+                            bullet_cx = b.x + b.W // 2
+                            bullet_cy = b.y + b.H // 2
+                            center_x = e.x + e.W // 2
+                            center_y = e.y + e.H // 2
+                            
+                            # 计算缩放和旋转（与draw_enemy完全相同）
+                            sc = self.SIZE_SCALE[e.kind]
+                            img_width, img_height = e.meteorite_img.get_size()
+                            scaled_width = int(img_width * sc)
+                            scaled_height = int(img_height * sc)
+                            
+                            # 缩放图片
+                            scaled_img = pygame.transform.smoothscale(e.meteorite_img, (scaled_width, scaled_height))
+                            
+                            # 旋转图片
+                            rotation_deg = int(e.rotation * 180 / math.pi)
+                            rotated_img = pygame.transform.rotate(scaled_img, rotation_deg)
+                            rotated_mask = pygame.mask.from_surface(rotated_img)
+                            rotated_rect = rotated_img.get_rect(center=(center_x, center_y))
+                            
+                            # 创建子弹的mask（简单矩形）
+                            bullet_surf = pygame.Surface((b.W, b.H), pygame.SRCALPHA)
+                            pygame.draw.rect(bullet_surf, (255, 255, 255, 255), (0, 0, b.W, b.H))
+                            bullet_mask = pygame.mask.from_surface(bullet_surf)
+                            
+                            # 计算子弹相对于陨石的偏移
+                            offset_x = int(b.x) - rotated_rect.left
+                            offset_y = int(b.y) - rotated_rect.top
+                            
+                            # 使用mask碰撞检测
+                            if rotated_mask.overlap(bullet_mask, (offset_x, offset_y)):
+                                if b in bullets:
+                                    bullets.remove(b)
+                                # 减少陨石生命值
+                                e.hp -= 1
+                                
+                                # 计算碰撞点（使用子弹位置）
+                                collision_x = bullet_cx
+                                collision_y = bullet_cy
+                                
+                                # 子弹碰到陨石时总是产生小爆炸
+                                particles += self.make_explosion(collision_x, collision_y, n=8, r_range=(2, 6))
+                        except (pygame.error, ValueError, MemoryError) as ex:
+                            # 如果mask碰撞检测失败，使用距离碰撞检测
+                            log(f"子弹-陨石 mask 碰撞失败 (种类{e.kind}): {ex}")
+                            bullet_cx = b.x + b.W // 2
+                            bullet_cy = b.y + b.H // 2
+                            center_x = e.x + e.W // 2
+                            center_y = e.y + e.H // 2
+                            dist = math.sqrt((bullet_cx - center_x)**2 + (bullet_cy - center_y)**2)
+                            if dist < max(e.W, e.H) // 2:
+                                if b in bullets:
+                                    bullets.remove(b)
+                                e.hp -= 1
+                                particles += self.make_explosion(bullet_cx, bullet_cy, n=8, r_range=(2, 6))
                         
                         # 检查陨石是否被击碎
                         if e.hp <= 0:
@@ -439,8 +521,8 @@ class Game:
                                     
                                     # 生成小陨石
                                     for _ in range(piece_count):
-                                        # 新陨石的大小比原陨石小1-2级
-                                        new_kind = max(0, e.kind - random.randint(1, 2))
+                                        # 新陨石必须比原陨石小（小于原陨石等级）
+                                        new_kind = random.randint(0, e.kind - 2)
                                         # 计算新陨石的位置（在原陨石附近）
                                         new_x = e.x + random.randint(-e.W//4, e.W//4)
                                         new_y = e.y + random.randint(-e.H//4, e.H//4)
@@ -471,61 +553,65 @@ class Game:
             for e in enemies[:]:
                 # 首先进行矩形碰撞检测（快速筛选）
                 if player.x + player.W > e.x and player.x < e.x + e.W and player.y + player.H > e.y and player.y < e.y + e.H:
-                    # 计算陨石的中心位置
-                    center_x = e.x + e.W // 2
-                    center_y = e.y + e.H // 2
-                    
-                    # 为陨石创建临时表面和mask
-                    # 计算陨石的实际大小
-                    sc = self.SIZE_SCALE[e.kind]
-                    rotation = e.rotation
-                    
-                    # 计算陨石的边界框大小
-                    max_dim = int(60 * sc)  # 陨石多边形的最大尺寸
-                    meteor_surf = pygame.Surface((max_dim * 2, max_dim * 2), pygame.SRCALPHA)
-                    meteor_center = (max_dim, max_dim)
-                    
-                    # 绘制陨石到临时表面
-                    def sp(x, y):
-                        # 应用旋转
-                        angle = rotation
-                        rx = x * math.cos(angle) - y * math.sin(angle)
-                        ry = x * math.sin(angle) + y * math.cos(angle)
-                        return (meteor_center[0] + int(rx * sc), meteor_center[1] + int(ry * sc))
-                    
-                    # 陨石的多边形顶点
-                    pts = [sp(-13,-24), sp(8,-26), sp(24,-10), sp(26, 8),
-                           sp(13, 26), sp(-8,29), sp(-24, 13), sp(-29,-5)]
-                    
-                    # 绘制陨石多边形
-                    ROCK = (140, 110, 75)
-                    pygame.draw.polygon(meteor_surf, ROCK, pts)
-                    
-                    # 创建陨石的mask
-                    meteor_mask = pygame.mask.from_surface(meteor_surf)
-                    
-                    # 计算碰撞偏移量
-                    offset_x = int(center_x - meteor_center[0]) - int(player.x)
-                    offset_y = int(center_y - meteor_center[1]) - int(player.y)
-                    
-                    # 使用mask碰撞检测
-                    if self.PLAYER_MASK.overlap(meteor_mask, (offset_x, offset_y)):
-                        # 玩家受到伤害，发生较大的爆炸
-                        particles += self.make_explosion(e.x, e.y, n=40, r_range=(8, 20))
-                        
-                        # 记录日志：飞机被陨石砸到
-                        log(f"飞机被陨石砸到！当前分数：{player.score}")
-                        
-                        # 设置无敌状态：2秒（120帧）
-                        player.invincible = 120
-                        # 标记为无法发射子弹
-                        player.can_shoot = False
-                        # 减少生命值
-                        player.lives -= 1
-                        
-                        # 移除砸到玩家的陨石，但不加分
-                        enemies.remove(e)
-                        break
+                    # 玩家与陨石的碰撞检测（使用mask）
+                    if e.meteorite_img:
+                        try:
+                            center_x = e.x + e.W // 2
+                            center_y = e.y + e.H // 2
+                            
+                            # 计算缩放和旋转（与draw_enemy完全相同）
+                            sc = self.SIZE_SCALE[e.kind]
+                            img_width, img_height = e.meteorite_img.get_size()
+                            scaled_width = int(img_width * sc)
+                            scaled_height = int(img_height * sc)
+                            
+                            # 缩放图片
+                            scaled_img = pygame.transform.smoothscale(e.meteorite_img, (scaled_width, scaled_height))
+                            
+                            # 旋转图片
+                            rotation_deg = int(e.rotation * 180 / math.pi)
+                            rotated_img = pygame.transform.rotate(scaled_img, rotation_deg)
+                            rotated_mask = pygame.mask.from_surface(rotated_img)
+                            rotated_rect = rotated_img.get_rect(center=(center_x, center_y))
+                            
+                            # 计算碰撞偏移量
+                            offset_x = int(player.x) - rotated_rect.left
+                            offset_y = int(player.y) - rotated_rect.top
+                            
+                            # 使用mask碰撞检测
+                            if self.PLAYER_MASK.overlap(rotated_mask, (offset_x, offset_y)):
+                                # 玩家受到伤害，发生较大的爆炸
+                                particles += self.make_explosion(e.x, e.y, n=40, r_range=(8, 20))
+                                
+                                # 记录日志：飞机被陨石砸到
+                                log(f"飞机被陨石砸到！当前分数：{player.score}")
+                                
+                                # 设置无敌状态：2秒（120帧）
+                                player.invincible = 120
+                                # 标记为无法发射子弹
+                                player.can_shoot = False
+                                # 减少生命值
+                                player.lives -= 1
+                                
+                                # 移除砸到玩家的陨石，但不加分
+                                enemies.remove(e)
+                                break
+                        except (pygame.error, ValueError, MemoryError) as ex:
+                            # 如果mask碰撞检测失败，使用距离碰撞检测
+                            log(f"玩家-陨石 mask 碰撞失败 (种类{e.kind}): {ex}")
+                            center_x = e.x + e.W // 2
+                            center_y = e.y + e.H // 2
+                            player_cx = player.x + player.W // 2
+                            player_cy = player.y + player.H // 2
+                            dist = math.sqrt((player_cx - center_x)**2 + (player_cy - center_y)**2)
+                            if dist < max(e.W, e.H) // 2:
+                                particles += self.make_explosion(e.x, e.y, n=40, r_range=(8, 20))
+                                log(f"飞机被陨石砸到！当前分数：{player.score}")
+                                player.invincible = 120
+                                player.can_shoot = False
+                                player.lives -= 1
+                                enemies.remove(e)
+                                break
         else:
             # 无敌状态：陨石直接穿过玩家
             pass

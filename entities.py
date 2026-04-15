@@ -2,6 +2,7 @@
 
 import pygame
 import random
+import os
 from constants import PLAYER_SPEED, PLAYER_SHOOT_CD, BULLET_SPEED, COLORS
 from utils import clamp
 
@@ -94,14 +95,30 @@ class Enemy:
         else:
             self.kind = kind
         
-        # 根据大小调整陨石尺寸
-        base_size = 50
+        # 为这个敌人随机分配一张陨石图片
+        if game.METEORITE_IMG_CACHE:
+            self.meteorite_img = random.choice(list(game.METEORITE_IMG_CACHE.values()))
+            # 创建图片的mask用于碰撞检测
+            self.meteorite_mask = pygame.mask.from_surface(self.meteorite_img)
+        else:
+            self.meteorite_img = None
+            self.meteorite_mask = None
+        
+        # 根据大小调整陨石尺寸（使用实际图片尺寸）
         scale = game.SIZE_SCALE[self.kind]
-        self.W = int(base_size * scale)
-        self.H = int(base_size * scale)
+        if self.meteorite_img:
+            img_width, img_height = self.meteorite_img.get_size()
+            self.W = int(img_width * scale)
+            self.H = int(img_height * scale)
+        else:
+            # 如果没有图片，使用基础尺寸
+            base_size = 50
+            self.W = int(base_size * scale)
+            self.H = int(base_size * scale)
         
         # 初始化位置
-        self.x = random.randint(0, game.WIDTH - self.W)
+        max_x = max(0, game.WIDTH - self.W)
+        self.x = random.randint(0, max_x)
         self.y = -self.H
         
         # 根据大小调整速度
@@ -148,12 +165,11 @@ class Enemy:
     
     def draw(self, surf):
         """绘制敌人"""
-        # 使用游戏对象的draw_enemy方法绘制陨石
         # 计算陨石的中心位置
         center_x = self.x + self.W // 2
         center_y = self.y + self.H // 2
-        # 调用游戏对象的draw_enemy方法，使用kind作为size参数
-        self.game.draw_enemy(surf, center_x, center_y, size=self.kind, rotation=self.rotation)
+        # 调用游戏对象的draw_enemy方法，传递图片
+        self.game.draw_enemy(surf, center_x, center_y, size=self.kind, rotation=self.rotation, img=self.meteorite_img)
 
 class Bullet:
     """子弹类"""
