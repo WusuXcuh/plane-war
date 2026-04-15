@@ -571,6 +571,9 @@ class Game:
         scroll = 0
         spawn_timer = 0
         
+        # 进入新关时先锁定空格，避免上一屏空格按下状态导致直接发射
+        ignore_space = pygame.key.get_pressed()[pygame.K_SPACE]
+        
         # 根据关卡号动态计算难度
         spawn_interval = self._calculate_level_spawn_interval(level)
         score_target = self._calculate_score_target(level)
@@ -590,7 +593,10 @@ class Game:
             keys = pygame.key.get_pressed()
             player.update(keys)
             if keys[pygame.K_SPACE]:
-                self._player_shoot(player, bullets)
+                if not ignore_space:
+                    self._player_shoot(player, bullets)
+            else:
+                ignore_space = False
             
             # 生成敌机
             spawn_timer = self._try_spawn_enemy(spawn_timer, spawn_interval, enemies)
@@ -641,6 +647,9 @@ class Game:
         scroll = 0
         spawn_timer = 0
         
+        # 进入无尽模式时先锁定空格，避免上一屏空格按下状态导致直接发射
+        ignore_space = pygame.key.get_pressed()[pygame.K_SPACE]
+        
         # 初始生成间隔
         spawn_interval = 55
         # 难度增加计数器
@@ -664,7 +673,10 @@ class Game:
             keys = pygame.key.get_pressed()
             player.update(keys)
             if keys[pygame.K_SPACE]:
-                self._player_shoot(player, bullets)
+                if not ignore_space:
+                    self._player_shoot(player, bullets)
+            else:
+                ignore_space = False
             
             # 增加难度
             if difficulty_timer >= difficulty_increase_interval:
