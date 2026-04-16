@@ -3,6 +3,7 @@
 import pygame
 import random
 import os
+import math
 from constants import PLAYER_SPEED, PLAYER_SHOOT_CD, BULLET_SPEED, COLORS
 from utils import clamp
 
@@ -137,6 +138,24 @@ class Enemy:
         
         # 生命值：根据大小确定
         self.hp = game.SIZE_HP[self.kind]
+        
+        # 预先生成缩放后的陨石图片，用于加速绘制和碰撞检测
+        if self.meteorite_img:
+            self.base_image = pygame.transform.smoothscale(self.meteorite_img, (self.W, self.H))
+            self.base_mask = pygame.mask.from_surface(self.base_image)
+            self.rotated_img = None
+            self.rotated_mask = None
+            self.rotated_rect = None
+            self.prepare_render()
+    
+    def prepare_render(self):
+        """为当前帧准备旋转后的渲染图像和碰撞掩码"""
+        if not self.meteorite_img:
+            return
+        rotation_deg = int(self.rotation * 180 / math.pi)
+        self.rotated_img = pygame.transform.rotate(self.base_image, rotation_deg)
+        self.rotated_mask = pygame.mask.from_surface(self.rotated_img)
+        self.rotated_rect = self.rotated_img.get_rect(center=(self.x + self.W // 2, self.y + self.H // 2))
     
     def update(self):
         """更新敌人状态"""
@@ -145,6 +164,9 @@ class Enemy:
         
         # 更新旋转
         self._update_rotation()
+        
+        # 预先渲染当前帧
+        self.prepare_render()
         
         # 边界检测
         return self._check_boundaries()
@@ -170,11 +192,12 @@ class Enemy:
     
     def draw(self, surf):
         """绘制敌人"""
-        # 计算陨石的中心位置
-        center_x = self.x + self.W // 2
-        center_y = self.y + self.H // 2
-        # 调用游戏对象的draw_enemy方法，传递图片
-        self.game.draw_enemy(surf, center_x, center_y, size=self.kind, rotation=self.rotation, img=self.meteorite_img)
+        if self.meteorite_img and self.rotated_img and self.rotated_rect:
+            surf.blit(self.rotated_img, self.rotated_rect.topleft)
+        else:
+            center_x = self.x + self.W // 2
+            center_y = self.y + self.H // 2
+            self.game.draw_enemy(surf, center_x, center_y, size=self.kind, rotation=self.rotation, img=self.meteorite_img)
 
 class Bullet:
     """子弹类"""
