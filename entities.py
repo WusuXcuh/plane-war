@@ -16,7 +16,7 @@ class Player:
         self.game = game
         # 从游戏对象获取飞机图片的实际大小
         self.W, self.H = game.PLAYER_IMG.get_size()
-        self.x = game.WIDTH // 2
+        self.x = (game.WIDTH - self.W) // 2
         # 初始位置在最下方的三分之一部分
         min_y = game.HEIGHT * 2/3
         self.y = max(min_y, game.HEIGHT - self.H - 10)

@@ -500,6 +500,6 @@ class Interfaces:
             
             self.game.show_text_center("关卡完成！", self.game.font_l, self.game.COLORS['GREEN'], self.game.HEIGHT // 2 - 80)
             self.game.show_text_center(f"得分: {player.score} / {score_target}", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
-            self.game.show_text_center("按 Enter / 空格 回到主界面", self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 40)
+            self.game.show_text_center("按 Enter / 空格 进入下一关", self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 40)
             
             pygame.display.flip()

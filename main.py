@@ -387,7 +387,7 @@ class Game:
         """处理玩家射击逻辑"""
         if player.try_shoot():
             bullet_x = player.x + player.W // 2
-            bullet_y = player.y - 10
+            bullet_y = player.y + 8
             bullets.append(Bullet(bullet_x, bullet_y, self))
 
     def _calculate_level_spawn_interval(self, level):
