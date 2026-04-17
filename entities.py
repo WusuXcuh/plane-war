@@ -70,7 +70,7 @@ class Player:
     
     def try_shoot(self):
         """尝试发射子弹"""
-        if self.shoot_timer <= 0 and self.can_shoot:  # 无敌时无法发射子弹
+        if self.shoot_timer <= 0 and (self.can_shoot or self.invincible > 0):  # 无敌时可以发射子弹
             self.shoot_timer = self.SHOOT_CD
             return True
         return False

@@ -74,7 +74,7 @@ class Game:
         
         # 加载玩家飞机图片
         self.PLAYER_IMG = self._load_player_image()
-        self.PLAYER_MASK = pygame.mask.from_surface(self.PLAYER_IMG, 200)
+        self.PLAYER_MASK = pygame.mask.from_surface(self.PLAYER_IMG, 127)  # 降低阈值，确保更多像素被认为是实心的
         self.RETURN_BUTTON_RECT = pygame.Rect(*RETURN_BUTTON_RECT)
         
         # 加载陨石图片缓存

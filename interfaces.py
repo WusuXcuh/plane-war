@@ -121,7 +121,8 @@ class Interfaces:
             {"x": random.randint(0, self.game.WIDTH), "y": random.randint(0, self.game.HEIGHT),
              "vx": random.uniform(-0.4, 0.4), "vy": random.uniform(0.3, 0.9),
              "kind": random.randint(0, 1), "a": random.uniform(0, 6.28),
-             "rotation": 0, "rotation_speed": random.uniform(0.01, 0.04) * random.choice([1, -1])}
+             "rotation": 0, "rotation_speed": random.uniform(0.01, 0.04) * random.choice([1, -1]),
+             "img": self.game._get_random_meteorite_image()}  # 为每个陨石分配固定图片
             for _ in range(6)
         ]
         
@@ -223,7 +224,7 @@ class Interfaces:
                 r["x"] = (r["x"] + r["vx"]) % self.game.WIDTH
                 r["y"] = (r["y"] + r["vy"]) % self.game.HEIGHT
                 r["rotation"] += r["rotation_speed"]
-                self.game.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=self.game._get_random_meteorite_image())
+                self.game.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=r["img"])
             rock_surf.set_alpha(60)
             self.game.screen.blit(rock_surf, (0, 0))
             
@@ -293,7 +294,8 @@ class Interfaces:
             {"x": random.randint(0, self.game.WIDTH), "y": random.randint(0, self.game.HEIGHT),
              "vx": random.uniform(-0.4, 0.4), "vy": random.uniform(0.3, 0.9),
              "kind": random.randint(0, 1), "a": random.uniform(0, 6.28),
-             "rotation": 0, "rotation_speed": random.uniform(0.01, 0.04) * random.choice([1, -1])}
+             "rotation": 0, "rotation_speed": random.uniform(0.01, 0.04) * random.choice([1, -1]),
+             "img": self.game._get_random_meteorite_image()}  # 为每个陨石分配固定图片
             for _ in range(6)
         ]
         
@@ -360,7 +362,7 @@ class Interfaces:
                 r["x"] = (r["x"] + r["vx"]) % self.game.WIDTH
                 r["y"] = (r["y"] + r["vy"]) % self.game.HEIGHT
                 r["rotation"] += r["rotation_speed"]
-                self.game.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=self.game._get_random_meteorite_image())
+                self.game.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=r["img"])
             rock_surf.set_alpha(60)
             self.game.screen.blit(rock_surf, (0, 0))
             
