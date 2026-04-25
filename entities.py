@@ -21,6 +21,8 @@ class Player:
         min_y = game.HEIGHT * 2/3
         self.y = max(min_y, game.HEIGHT - self.H - 10)
         self.lives = 3
+        self.max_hp = 100
+        self.hp = self.max_hp
         self.score = 0
         self.shoot_timer = self.SHOOT_CD  # 进入时有冷却，不立即发射
         self.invincible = 0   # 受伤后无敌帧

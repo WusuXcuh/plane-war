@@ -28,7 +28,7 @@ PLAYER_SHOOT_CD = 8  # 帧
 PLAYER_IMAGE = "pictures/plane/我方飞机.png"
 
 # 界面设置
-RETURN_BUTTON_RECT = (WIDTH - 115, 60, 100, 40)
+RETURN_BUTTON_RECT = (WIDTH - 115, 90, 100, 40)
 
 # 敌人设置
 ENEMY_SPEED = 3

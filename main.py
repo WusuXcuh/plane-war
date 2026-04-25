@@ -89,6 +89,7 @@ class Game:
         self.MAX_ENEMIES = 40
         self.MAX_PARTICLES = 120
         self.DEBUG_COLLISION = False
+        self.METEORITE_DAMAGE_RANGES = [(5, 15), (15, 25), (35, 45), (55, 65), (76, 85)]
         self.USER_DATA_DIR = os.path.join(os.path.dirname(__file__), "user_data")
         self.HIGH_SCORE_FILE = os.path.join(self.USER_DATA_DIR, "high_score.txt")
         self.high_score = self.load_high_score()
@@ -386,12 +387,36 @@ class Game:
         # 生命
         txt = self.font_s.render(f"命: {player.lives}", True, self.COLORS['CYAN'])
         self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 15))
+        txt = self.font_s.render(f"HP: {player.hp}/{player.max_hp}", True, self.COLORS['RED'])
+        self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 50))
         # 目标分数
         progress = min(100, int(player.score / score_target * 100))
         txt = self.font_s.render(f"目标: {player.score}/{score_target} ({progress}%)", True, self.COLORS['GREEN'])
         self.screen.blit(txt, (15, 50))
+        # 在关卡进度下方绘制血条
+        self._draw_hp_bar(player, 15, 90, 220, 16)
         self._draw_return_button()
     
+
+    def _draw_hp_bar(self, player, x, y, width, height):
+        """绘制玩家血条。"""
+        hp_ratio = max(0, min(1, player.hp / player.max_hp))
+        fill_width = int(width * hp_ratio)
+
+        # 根据剩余血量切换颜色
+        if hp_ratio > 0.6:
+            fill_color = self.COLORS['GREEN']
+        elif hp_ratio > 0.3:
+            fill_color = self.COLORS['YELLOW']
+        else:
+            fill_color = self.COLORS['RED']
+
+        # 依次绘制底色、当前血量和边框
+        pygame.draw.rect(self.screen, (40, 40, 40), (x, y, width, height), border_radius=4)
+        if fill_width > 0:
+            pygame.draw.rect(self.screen, fill_color, (x, y, fill_width, height), border_radius=4)
+        pygame.draw.rect(self.screen, self.COLORS['WHITE'], (x, y, width, height), 2, border_radius=4)
+
     def draw_endless_hud(self, player, spawn_interval, difficulty_level=None):
         """绘制无尽模式界面信息"""
         # 难度（放在左上角）
@@ -411,6 +436,8 @@ class Game:
         # 生命
         txt = self.font_s.render(f"命: {player.lives}", True, self.COLORS['CYAN'])
         self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 15))
+        txt = self.font_s.render(f"HP: {player.hp}/{player.max_hp}", True, self.COLORS['RED'])
+        self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 50))
         self._draw_return_button()
     
     def _draw_return_button(self):
@@ -502,6 +529,22 @@ class Game:
         
         return particles
     
+    def _damage_player(self, player, enemy):
+        damage_min, damage_max = self.METEORITE_DAMAGE_RANGES[enemy.kind]
+        damage = random.randint(damage_min, damage_max)
+        player.hp = max(0, player.hp - damage)
+
+        if player.hp <= 0:
+            player.lives -= 1
+            if player.lives > 0:
+                player.hp = player.max_hp
+            player.invincible = 120
+            player.can_shoot = False
+            return damage, True
+
+        player.invincible = 45
+        return damage, False
+
     def handle_collisions(self, bullets, enemies, particles, player, difficulty=1):
         """处理碰撞检测"""
         # 限制碎裂体和概率扩展，避免高级关卡数量爆炸式增长
@@ -644,9 +687,8 @@ class Game:
                                 explosion_y = e.y + e.H // 2
                                 particles += self.make_explosion(explosion_x, explosion_y, n=40, r_range=(8, 20))
                                 log(f"飞机被陨石砸到（Mask碰撞）！当前分数：{player.score}")
-                                player.invincible = 120
-                                player.can_shoot = False
-                                player.lives -= 1
+                                damage, died = self._damage_player(player, e)
+                                log(f"Player hit by meteorite kind {e.kind}: -{damage} HP, HP={player.hp}/{player.max_hp}, lives={player.lives}")
                                 enemies.remove(e)
                                 break
                             else:
@@ -661,9 +703,8 @@ class Game:
                                     explosion_y = e.y + e.H // 2
                                     particles += self.make_explosion(explosion_x, explosion_y, n=40, r_range=(8, 20))
                                     log(f"飞机被陨石砸到（距离碰撞）！当前分数：{player.score}")
-                                    player.invincible = 120
-                                    player.can_shoot = False
-                                    player.lives -= 1
+                                    damage, died = self._damage_player(player, e)
+                                    log(f"Player hit by meteorite kind {e.kind}: -{damage} HP, HP={player.hp}/{player.max_hp}, lives={player.lives}")
                                     enemies.remove(e)
                                     break
                         except (pygame.error, ValueError, MemoryError, IndexError) as ex:
@@ -679,9 +720,8 @@ class Game:
                                 explosion_y = e.y + e.H // 2
                                 particles += self.make_explosion(explosion_x, explosion_y, n=40, r_range=(8, 20))
                                 log(f"飞机被陨石砸到（异常恢复）！当前分数：{player.score}")
-                                player.invincible = 120
-                                player.can_shoot = False
-                                player.lives -= 1
+                                damage, died = self._damage_player(player, e)
+                                log(f"Player hit by meteorite kind {e.kind}: -{damage} HP, HP={player.hp}/{player.max_hp}, lives={player.lives}")
                                 enemies.remove(e)
                                 break
         else:
