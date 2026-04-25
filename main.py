@@ -7,7 +7,7 @@ import datetime
 from constants import WIDTH, HEIGHT, FPS, COLORS, RETURN_BUTTON_RECT, PLAYER_IMAGE
 from entities import Player, Enemy, Bullet
 from interfaces import Interfaces
-from utils import create_button_surface, point_in_polygon
+from utils import create_button_surface
 
 # 日志记录函数
 def log(message):
@@ -79,6 +79,7 @@ class Game:
         
         # 加载陨石图片缓存
         self.METEORITE_IMG_CACHE = {}
+        self.SCALED_METEORITE_CACHE = {}
         self._load_meteorite_images()
         
         # 星空背景
@@ -87,6 +88,10 @@ class Game:
         # 数量限制，避免关卡末期陨石数量失控导致卡顿
         self.MAX_ENEMIES = 40
         self.MAX_PARTICLES = 120
+        self.DEBUG_COLLISION = False
+        self.USER_DATA_DIR = os.path.join(os.path.dirname(__file__), "user_data")
+        self.HIGH_SCORE_FILE = os.path.join(self.USER_DATA_DIR, "high_score.txt")
+        self.high_score = self.load_high_score()
         
         # 为子弹创建共享碰撞掩码
         bullet_surface = pygame.Surface((Bullet.W, Bullet.H), pygame.SRCALPHA)
@@ -99,6 +104,37 @@ class Game:
         # 记录游戏初始化
         log("游戏初始化完成")
     
+    def load_high_score(self):
+        """Load the saved highest score from user_data."""
+        try:
+            os.makedirs(self.USER_DATA_DIR, exist_ok=True)
+            if not os.path.exists(self.HIGH_SCORE_FILE):
+                return 0
+
+            with open(self.HIGH_SCORE_FILE, "r", encoding="utf-8") as f:
+                return max(0, int(f.read().strip() or 0))
+        except (OSError, ValueError) as e:
+            log(f"Load high score failed: {e}")
+            return 0
+
+    def save_high_score(self):
+        """Save the current highest score to user_data."""
+        try:
+            os.makedirs(self.USER_DATA_DIR, exist_ok=True)
+            with open(self.HIGH_SCORE_FILE, "w", encoding="utf-8") as f:
+                f.write(str(self.high_score))
+        except OSError as e:
+            log(f"Save high score failed: {e}")
+
+    def update_high_score(self, score):
+        """Update highest score when the player gets a new record."""
+        if score > self.high_score:
+            self.high_score = score
+            self.save_high_score()
+            log(f"无尽模式最高记录: {self.high_score}")
+            return True
+        return False
+
     def toggle_debug_collision(self):
         """切换碰撞调试模式"""
         self.DEBUG_COLLISION = not self.DEBUG_COLLISION
@@ -207,7 +243,11 @@ class Game:
             scaled_height = int(img_height * sc)
             
             # 缩放图片
-            scaled_img = pygame.transform.smoothscale(img, (scaled_width, scaled_height))
+            cache_key = (id(img), size, scaled_width, scaled_height)
+            scaled_img = self.SCALED_METEORITE_CACHE.get(cache_key)
+            if scaled_img is None:
+                scaled_img = pygame.transform.smoothscale(img, (scaled_width, scaled_height))
+                self.SCALED_METEORITE_CACHE[cache_key] = scaled_img
             
             # 旋转图片（转换为度数）
             rotation_deg = int(rotation * 180 / math.pi)
@@ -352,16 +392,19 @@ class Game:
         self.screen.blit(txt, (15, 50))
         self._draw_return_button()
     
-    def draw_endless_hud(self, player, spawn_interval):
+    def draw_endless_hud(self, player, spawn_interval, difficulty_level=None):
         """绘制无尽模式界面信息"""
         # 难度（放在左上角）
-        difficulty = 100 - ((spawn_interval - 15) / 40 * 100)
-        difficulty = min(100, max(0, int(difficulty)))
-        txt = self.font_s.render(f"难度: {difficulty}", True, self.COLORS['ORANGE'])
+        if difficulty_level is None:
+            base_interval = self._calculate_level_spawn_interval(80)
+            difficulty_level = 80 + max(0, (base_interval - spawn_interval) // 2)
+        txt = self.font_s.render(f"难度: {difficulty_level}", True, self.COLORS['ORANGE'])
         self.screen.blit(txt, (15, 15))
         # 分数
         txt = self.font_s.render(f"得分: {player.score}", True, self.COLORS['WHITE'])
         self.screen.blit(txt, (15, 50))
+        txt = self.font_s.render(f"最高记录: {self.high_score}", True, self.COLORS['YELLOW'])
+        self.screen.blit(txt, (15, 85))
         # 模式
         txt = self.font_s.render("模式: 无尽", True, self.COLORS['MAGENTA'])
         self.screen.blit(txt, (self.WIDTH // 2 - txt.get_width() // 2, 15))
@@ -445,14 +488,10 @@ class Game:
     def update_entities(self, bullets, enemies, particles, player):
         """更新游戏实体"""
         # 更新子弹
-        for b in bullets[:]:
-            if b.update():
-                bullets.remove(b)
+        bullets[:] = [b for b in bullets if not b.update()]
         
         # 更新陨石
-        for e in enemies[:]:
-            if e.update():
-                enemies.remove(e)
+        enemies[:] = [e for e in enemies if not e.update()]
         
         # 更新粒子
         particles = self.update_particles(particles)
@@ -651,7 +690,7 @@ class Game:
         
         return particles
     
-    def draw_game(self, player, bullets, enemies, particles, scroll, level=None, score_target=None, spawn_interval=None):
+    def draw_game(self, player, bullets, enemies, particles, scroll, level=None, score_target=None, spawn_interval=None, endless_difficulty=None):
         """绘制游戏界面"""
         # 绘制背景
         self.draw_background(scroll)
@@ -677,7 +716,7 @@ class Game:
             # 无尽模式HUD
             if spawn_interval is None:
                 spawn_interval = 55
-            self.draw_endless_hud(player, spawn_interval)
+            self.draw_endless_hud(player, spawn_interval, endless_difficulty)
     
     def game_screen(self, level):
         """游戏主界面"""
@@ -686,7 +725,6 @@ class Game:
         bullets = []
         enemies = []
         particles = []
-        
         scroll = 0
         spawn_timer = 0
         
@@ -759,6 +797,7 @@ class Game:
         """无尽模式"""
         log("开始无尽模式")
         player = Player(self)
+        player.is_new_high_score = False
         bullets = []
         enemies = []
         particles = []
@@ -770,7 +809,8 @@ class Game:
         ignore_space = pygame.key.get_pressed()[pygame.K_SPACE]
         
         # 初始生成间隔
-        spawn_interval = 55
+        endless_difficulty = 80
+        spawn_interval = self._calculate_level_spawn_interval(endless_difficulty)
         # 难度增加计数器
         difficulty_timer = 0
         # 每1000帧增加一次难度
@@ -800,6 +840,7 @@ class Game:
             # 增加难度
             if difficulty_timer >= difficulty_increase_interval:
                 difficulty_timer = 0
+                endless_difficulty += 1
                 spawn_interval = max(15, spawn_interval - 2)  # 最小间隔为15帧
                 log(f"无尽模式难度增加：生成间隔={spawn_interval}")
             
@@ -810,18 +851,20 @@ class Game:
             particles = self.update_entities(bullets, enemies, particles, player)
             
             # 计算无尽模式难度
-            difficulty = self._calculate_endless_difficulty(spawn_interval)
             # 碰撞检测，传入难度参数
-            particles = self.handle_collisions(bullets, enemies, particles, player, difficulty=difficulty)
+            particles = self.handle_collisions(bullets, enemies, particles, player, difficulty=endless_difficulty)
+            if self.update_high_score(player.score):
+                player.is_new_high_score = True
             
             # 绘制
-            self.draw_game(player, bullets, enemies, particles, scroll, spawn_interval=spawn_interval)
+            self.draw_game(player, bullets, enemies, particles, scroll, spawn_interval=spawn_interval, endless_difficulty=endless_difficulty)
             
             pygame.display.flip()
             
             # 检查是否游戏结束
             if player.lives <= 0:
                 log(f"无尽模式结束！最终得分：{player.score}")
+                player.show_high_score = True
                 return player
         
         return player

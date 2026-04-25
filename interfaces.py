@@ -465,7 +465,14 @@ class Interfaces:
             
             self.game.show_text_center("游戏结束", self.game.font_l, self.game.COLORS['RED'], self.game.HEIGHT // 2 - 80)
             self.game.show_text_center(f"最终得分: {player.score}", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
-            self.game.show_text_center("按 Enter / 空格 回到主界面", self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 40)
+            prompt_y = self.game.HEIGHT // 2 + 40
+            if getattr(player, "show_high_score", False):
+                high_score_text = f"最高记录: {self.game.high_score}"
+                if getattr(player, "is_new_high_score", False):
+                    high_score_text += "  New!"
+                self.game.show_text_center(high_score_text, self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 20)
+                prompt_y = self.game.HEIGHT // 2 + 60
+            self.game.show_text_center("按 Enter / 空格 回到主界面", self.game.font_s, self.game.COLORS['YELLOW'], prompt_y)
             
             pygame.display.flip()
     

@@ -146,6 +146,7 @@ class Enemy:
             self.rotated_img = None
             self.rotated_mask = None
             self.rotated_rect = None
+            self._last_rotation_deg = None
             self.prepare_render()
     
     def prepare_render(self):
@@ -153,8 +154,10 @@ class Enemy:
         if not self.meteorite_img:
             return
         rotation_deg = int(self.rotation * 180 / math.pi)
-        self.rotated_img = pygame.transform.rotate(self.base_image, rotation_deg)
-        self.rotated_mask = pygame.mask.from_surface(self.rotated_img)
+        if rotation_deg != self._last_rotation_deg:
+            self.rotated_img = pygame.transform.rotate(self.base_image, rotation_deg)
+            self.rotated_mask = pygame.mask.from_surface(self.rotated_img)
+            self._last_rotation_deg = rotation_deg
         self.rotated_rect = self.rotated_img.get_rect(center=(self.x + self.W // 2, self.y + self.H // 2))
     
     def update(self):
