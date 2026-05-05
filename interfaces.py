@@ -37,40 +37,66 @@ class Interfaces:
     def confirm_exit_screen(self):
         """退出确认界面"""
         alpha = 0
+        paused_frame = self.game.screen.copy()
         fade_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT))
         fade_surf.fill(self.game.COLORS['BLACK'])
         
-        selected = 0  # 0: 是, 1: 否
-        blink = 0
-        
-        yes_rect = pygame.Rect(self.game.WIDTH // 2 - 120, self.game.HEIGHT // 2 + 20, 100, 40)
-        no_rect = pygame.Rect(self.game.WIDTH // 2 + 20, self.game.HEIGHT // 2 + 20, 100, 40)
+        selected = 0  # 0: 继续游戏, 1: 退出游戏
+        panel_rect = pygame.Rect(0, 0, 430, 250)
+        panel_rect.center = (self.game.WIDTH // 2, self.game.HEIGHT // 2)
+        continue_rect = pygame.Rect(panel_rect.left + 42, panel_rect.bottom - 78, 155, 48)
+        exit_rect = pygame.Rect(panel_rect.right - 197, panel_rect.bottom - 78, 155, 48)
 
         def event_handler(event):
             nonlocal selected
             if event.type == pygame.KEYDOWN:
+                key_text = getattr(event, "unicode", "").lower()
+                key_name = pygame.key.name(event.key).lower()
                 if event.key in (pygame.K_LEFT, pygame.K_a):
                     selected = 0
                 elif event.key in (pygame.K_RIGHT, pygame.K_d):
                     selected = 1
-                elif event.key == pygame.K_y:
+                elif key_text in ("y", "ｙ") or key_name == "y":
                     return True
-                elif event.key == pygame.K_n:
+                elif key_text in ("n", "ｎ") or key_name == "n":
                     return False
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                    return selected == 0
+                    return selected == 1
                 elif event.key == pygame.K_ESCAPE:
-                    return False  # Esc默认选择否
+                    return False  # Esc默认继续游戏
+            if event.type == pygame.MOUSEMOTION:
+                mouse_pos = pygame.mouse.get_pos()
+                if continue_rect.collidepoint(mouse_pos):
+                    selected = 0
+                elif exit_rect.collidepoint(mouse_pos):
+                    selected = 1
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if yes_rect.collidepoint(pygame.mouse.get_pos()):
-                    return True
-                elif no_rect.collidepoint(pygame.mouse.get_pos()):
+                if continue_rect.collidepoint(pygame.mouse.get_pos()):
                     return False
+                elif exit_rect.collidepoint(pygame.mouse.get_pos()):
+                    return True
             return None
+
+        def draw_label_center(text, font, color, y):
+            label = font.render(text, True, color)
+            self.game.screen.blit(label, (self.game.WIDTH // 2 - label.get_width() // 2, y))
+
+        def draw_dialog_button(rect, text, active, danger=False):
+            mouse_hover = rect.collidepoint(pygame.mouse.get_pos())
+            if danger:
+                fill = (210, 60, 70, 235) if active or mouse_hover else (105, 36, 45, 215)
+                border = (255, 160, 165, 255) if active or mouse_hover else (160, 85, 95, 230)
+            else:
+                fill = (55, 145, 110, 235) if active or mouse_hover else (34, 86, 78, 215)
+                border = (145, 235, 205, 255) if active or mouse_hover else (85, 150, 135, 230)
+
+            self._draw_button(rect, fill, border, border_radius=8,
+                              text=text,
+                              text_color=self.game.COLORS['WHITE'],
+                              font=self.game.font_s_bold)
         
         while True:
             self.game.clock.tick(self.game.FPS)
-            blink += 1
             
             # 处理事件
             result = self.handle_interface_events(event_handler)
@@ -81,30 +107,23 @@ class Interfaces:
             if alpha < 200:
                 alpha = min(200, alpha + 5)
             
+            self.game.screen.blit(paused_frame, (0, 0))
             fade_surf.set_alpha(alpha)
             self.game.screen.blit(fade_surf, (0, 0))
+
+            panel_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(panel_surf, (18, 24, 36, 238), panel_surf.get_rect(), border_radius=12)
+            pygame.draw.rect(panel_surf, (115, 175, 220, 230), panel_surf.get_rect(), 2, border_radius=12)
+            self.game.screen.blit(panel_surf, panel_rect.topleft)
             
-            # 标题
-            self.game.show_text_center("确认退出", self.game.font_l, self.game.COLORS['RED'], self.game.HEIGHT // 2 - 80)
-            self.game.show_text_center("确定要退出游戏吗？", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
+            # 标题与提示
+            draw_label_center("暂停", self.game.font_l, self.game.COLORS['CYAN'], panel_rect.top + 28)
+            draw_label_center("要退出当前游戏吗？", self.game.font_m, self.game.COLORS['WHITE'], panel_rect.top + 96)
+            draw_label_center("Esc / N 继续，Y 退出", self.game.font_s, (185, 215, 235), panel_rect.top + 143)
             
             # 按钮
-            yes_rect = pygame.Rect(self.game.WIDTH // 2 - 120, self.game.HEIGHT // 2 + 20, 100, 40)
-            no_rect = pygame.Rect(self.game.WIDTH // 2 + 20, self.game.HEIGHT // 2 + 20, 100, 40)
-            self._draw_button(yes_rect,
-                              self.game.COLORS['RED'] if selected == 0 else (100, 0, 0),
-                              self.game.COLORS['WHITE'],
-                              border_radius=10,
-                              text="是",
-                              text_color=self.game.COLORS['BLACK'] if selected == 0 and (blink // 30) % 2 == 0 else self.game.COLORS['WHITE'],
-                              font=self.game.font_s)
-            self._draw_button(no_rect,
-                              self.game.COLORS['GREEN'] if selected == 1 else (0, 100, 0),
-                              self.game.COLORS['WHITE'],
-                              border_radius=10,
-                              text="否",
-                              text_color=self.game.COLORS['BLACK'] if selected == 1 and (blink // 30) % 2 == 0 else self.game.COLORS['WHITE'],
-                              font=self.game.font_s)
+            draw_dialog_button(continue_rect, "继续游戏", selected == 0)
+            draw_dialog_button(exit_rect, "退出游戏", selected == 1, danger=True)
             
             pygame.display.flip()
     

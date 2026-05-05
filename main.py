@@ -26,7 +26,7 @@ def log(message):
 
 
 def _cleanup_log_file(log_file_path):
-    """清理日志文件：超过500行则删除第一行直至<=500行"""
+    """清理日志文件：超过1000行则删除第一行直至<=1000行"""
     try:
         if not os.path.exists(log_file_path):
             return
@@ -34,9 +34,9 @@ def _cleanup_log_file(log_file_path):
         with open(log_file_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
         
-        # 如果行数 > 500，保留最后500行（删除第一行直至<=500）
-        if len(lines) > 500:
-            lines = lines[-(500):]
+        # 如果行数 > 1000，保留最后1000行（删除第一行直至<=1000）
+        if len(lines) > 1000:
+            lines = lines[-(1000):]
             with open(log_file_path, "w", encoding="utf-8") as f:
                 f.writelines(lines)
     
@@ -69,6 +69,11 @@ class Game:
         
         # 字体
         self.font_s = self._load_font(24)
+        self.font_s_bold = self._load_font(24)
+        try:
+            self.font_s_bold.set_bold(True)
+        except Exception:
+            pass
         self.font_m = self._load_font(40)
         self.font_l = self._load_font(60)
         
@@ -182,9 +187,15 @@ class Game:
             
         # 如果所有尝试都失败，返回一个基本的字体对象
         class DummyFont:
+            def __init__(self):
+                self.bold = False
+
+            def set_bold(self, value):
+                self.bold = bool(value)
+
             def render(self, text, antialias, color):
-                surface = pygame.Surface((len(text) * 10, size))
-                surface.fill((0, 0, 0))
+                surface = pygame.Surface((len(text) * 10, size), pygame.SRCALPHA)
+                surface.fill((0, 0, 0, 0))
                 return surface
         log("使用虚拟字体")
         return DummyFont()
@@ -487,14 +498,14 @@ class Game:
         # 生命
         txt = self.font_s.render(f"命: {player.lives}", True, self.COLORS['CYAN'])
         self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 15))
-        txt = self.font_s.render(f"HP: {player.hp}/{player.max_hp}", True, self.COLORS['RED'])
-        self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 50))
         # 目标分数
         progress = min(100, int(player.score / score_target * 100))
         txt = self.font_s.render(f"目标: {player.score}/{score_target} ({progress}%)", True, self.COLORS['GREEN'])
         self.screen.blit(txt, (15, 50))
         # 在关卡进度下方绘制血条
         self._draw_hp_bar(player, 15, 90, 220, 16)
+        hp_text = self.font_s_bold.render(f"HP: {player.hp}/{player.max_hp}", True, self.COLORS['RED'])
+        self.screen.blit(hp_text, (15, 110))
         self._draw_return_button()
     
 
@@ -536,8 +547,9 @@ class Game:
         # 生命
         txt = self.font_s.render(f"命: {player.lives}", True, self.COLORS['CYAN'])
         self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 15))
-        txt = self.font_s.render(f"HP: {player.hp}/{player.max_hp}", True, self.COLORS['RED'])
-        self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 50))
+        self._draw_hp_bar(player, 15, 120, 220, 16)
+        hp_text = self.font_s_bold.render(f"HP: {player.hp}/{player.max_hp}", True, self.COLORS['RED'])
+        self.screen.blit(hp_text, (15, 142))
         self._draw_return_button()
     
     def _draw_return_button(self):
@@ -557,7 +569,7 @@ class Game:
         """处理玩家射击逻辑"""
         if player.try_shoot():
             bullet_x = player.x + player.W // 2
-            bullet_y = player.y + 8
+            bullet_y = player.y + 30
             bullets.append(Bullet(bullet_x, bullet_y, self))
 
     def _calculate_level_spawn_interval(self, level):
@@ -605,6 +617,7 @@ class Game:
                 if event.key == pygame.K_ESCAPE:
                     if self.confirm_exit_screen():
                         pygame.quit(); sys.exit()
+                    return "resume_game"
             # 鼠标点击检测
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if self.RETURN_BUTTON_RECT.collidepoint(pygame.mouse.get_pos()):
@@ -888,6 +901,8 @@ class Game:
             result = self.handle_events()
             if result == "main_menu":
                 return "main_menu"
+            if result == "resume_game":
+                ignore_space = pygame.key.get_pressed()[pygame.K_SPACE]
             
             # 玩家输入
             keys = pygame.key.get_pressed()
@@ -972,6 +987,8 @@ class Game:
             result = self.handle_events()
             if result == "main_menu":
                 return "main_menu"
+            if result == "resume_game":
+                ignore_space = pygame.key.get_pressed()[pygame.K_SPACE]
             
             # 玩家输入
             keys = pygame.key.get_pressed()
