@@ -4,7 +4,7 @@ import pygame
 import random
 import os
 import math
-from constants import PLAYER_SPEED, PLAYER_SHOOT_CD, BULLET_SPEED, COLORS
+from constants import PLAYER_SPEED, PLAYER_SHOOT_CD, BULLET_SPEED, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT, COLORS
 from utils import clamp
 
 class Player:
@@ -206,14 +206,24 @@ class Enemy:
 
 class Bullet:
     """子弹类"""
-    W, H = 4, 12
+    W, H = BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT
     SPEED = BULLET_SPEED
     
     def __init__(self, x, y, game):
+        self.game = game
+        self.image = game.get_bullet_image()
+        if self.image:
+            self.W, self.H = self.image.get_size()
+            self.mask = pygame.mask.from_surface(self.image, 127)
+        else:
+            self.W, self.H = self.__class__.W, self.__class__.H
+            fallback_surface = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+            pygame.draw.rect(fallback_surface, (255, 255, 255, 255), (0, 0, self.W, self.H))
+            self.mask = pygame.mask.from_surface(fallback_surface)
+
         # 确保子弹从玩家中心发射
         self.x = x - self.W // 2
         self.y = y - self.H
-        self.game = game
     
     def update(self):
         """更新子弹状态"""
@@ -235,4 +245,7 @@ class Bullet:
     
     def draw(self, surf):
         """绘制子弹"""
-        self.game.draw_bullet(surf, self.x + self.W // 2, self.y + self.H // 2, friendly=True)
+        if self.image:
+            surf.blit(self.image, (int(self.x), int(self.y)))
+        else:
+            self.game.draw_bullet(surf, self.x + self.W // 2, self.y + self.H // 2, friendly=True)

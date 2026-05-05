@@ -4,7 +4,7 @@ import sys
 import math
 import os
 import datetime
-from constants import WIDTH, HEIGHT, FPS, COLORS, RETURN_BUTTON_RECT, PLAYER_IMAGE
+from constants import WIDTH, HEIGHT, FPS, COLORS, RETURN_BUTTON_RECT, PLAYER_IMAGE, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT
 from entities import Player, Enemy, Bullet
 from interfaces import Interfaces
 from utils import create_button_surface
@@ -58,7 +58,7 @@ class Game:
         
         # 陨石大小配置（0=最小 … 4=最大）
         self.SIZE_SCALE = [0.135, 0.24, 0.36, 0.525, 0.75]      # 相对基础形状的缩放（缩小到30%）
-        self.SIZE_HP = [1, 1, 2, 3, 5]                       # 血量
+        self.SIZE_HP = [1, 1, 2, 4, 7]                  # 血量
         self.SIZE_SCORE = [60, 50, 80, 120, 240]              # 得分翻倍（最小陨石60分，第二小陨石50分，中等大小陨石80分）
         self.SIZE_SPEEDS = [(3.2,5.5),(2.4,4.0),(1.7,3.2),(1.0,2.0),(0.6,1.2)]  # 速度范围
         
@@ -81,6 +81,14 @@ class Game:
         self.METEORITE_IMG_CACHE = {}
         self.SCALED_METEORITE_CACHE = {}
         self._load_meteorite_images()
+
+        # 加载玩家子弹图片缓存
+        self.BULLET_IMAGES = []
+        self.BULLET_IMAGE_GROUPS = {}
+        self.BULLET_GROUP_INDEXES = {}
+        self.current_bullet_group = None
+        self.bullet_switch_timer = 0
+        self._load_bullet_images()
         
         # 星空背景
         self.stars = [(random.randint(0, self.WIDTH), random.randint(0, self.HEIGHT), random.random()) for _ in range(120)]
@@ -220,6 +228,98 @@ class Game:
                 log(f"成功加载陨石图片: {img_file}")
             except Exception as e:
                 log(f"加载陨石图片 {img_file} 失败: {e}")
+
+    def _load_bullet_images(self):
+        """加载所有玩家子弹图片，并缩放到适合游戏画面的尺寸。"""
+        bullet_dir = os.path.join(os.path.dirname(__file__), "pictures/bullets")
+        if not os.path.exists(bullet_dir):
+            log(f"子弹图片目录不存在: {bullet_dir}")
+            return
+
+        group_dirs = [
+            name for name in sorted(os.listdir(bullet_dir))
+            if os.path.isdir(os.path.join(bullet_dir, name))
+        ]
+        if group_dirs:
+            image_groups = {
+                group_name: [
+                    os.path.join(group_name, f)
+                    for f in sorted(os.listdir(os.path.join(bullet_dir, group_name)))
+                    if f.lower().endswith(".png")
+                ]
+                for group_name in group_dirs
+            }
+        else:
+            image_groups = {
+                "default": [
+                    f for f in sorted(os.listdir(bullet_dir))
+                    if f.lower().endswith(".png")
+                ]
+            }
+
+        if not any(image_groups.values()):
+            log("子弹目录中没有找到任何图片")
+            return
+
+        for group_name, image_files in image_groups.items():
+            group_images = []
+            for img_file in image_files:
+                try:
+                    path = os.path.join(bullet_dir, img_file)
+                    raw = pygame.image.load(path).convert_alpha()
+                    original_width, original_height = raw.get_size()
+                    scale = min(BULLET_TARGET_WIDTH / original_width, BULLET_TARGET_HEIGHT / original_height)
+                    target_width = max(1, int(original_width * scale))
+                    target_height = max(1, int(original_height * scale))
+                    img = pygame.transform.smoothscale(raw, (target_width, target_height))
+                    img = pygame.transform.rotate(img, 90)
+                    group_images.append(img)
+                    self.BULLET_IMAGES.append(img)
+                except Exception as e:
+                    log(f"加载子弹图片 {img_file} 失败: {e}")
+            if group_images:
+                self.BULLET_IMAGE_GROUPS[group_name] = group_images
+                self.BULLET_GROUP_INDEXES[group_name] = 0
+
+        if self.BULLET_IMAGE_GROUPS:
+            self.current_bullet_group = random.choice(list(self.BULLET_IMAGE_GROUPS.keys()))
+            self.BULLET_GROUP_INDEXES[self.current_bullet_group] = 0
+
+        log(f"成功加载子弹图片: {len(self.BULLET_IMAGES)} 张，分组: {len(self.BULLET_IMAGE_GROUPS)} 组")
+
+    def reset_bullet_group_timer(self):
+        """重置子弹分组切换计时器。"""
+        self.bullet_switch_timer = 0
+        if self.BULLET_IMAGE_GROUPS:
+            self.current_bullet_group = random.choice(list(self.BULLET_IMAGE_GROUPS.keys()))
+            self.BULLET_GROUP_INDEXES[self.current_bullet_group] = 0
+
+    def update_bullet_group(self):
+        """每20秒随机切换到另一组子弹图片。"""
+        if len(self.BULLET_IMAGE_GROUPS) <= 1:
+            return
+
+        self.bullet_switch_timer += 1
+        if self.bullet_switch_timer < self.FPS * 10:
+            return
+
+        self.bullet_switch_timer = 0
+        groups = [group for group in self.BULLET_IMAGE_GROUPS if group != self.current_bullet_group]
+        self.current_bullet_group = random.choice(groups)
+        self.BULLET_GROUP_INDEXES[self.current_bullet_group] = 0
+        log(f"切换子弹类型: {self.current_bullet_group}")
+
+    def get_bullet_image(self):
+        """获取一张玩家子弹图片。"""
+        if self.current_bullet_group in self.BULLET_IMAGE_GROUPS:
+            group_images = self.BULLET_IMAGE_GROUPS[self.current_bullet_group]
+            index = self.BULLET_GROUP_INDEXES.get(self.current_bullet_group, 0)
+            img = group_images[index % len(group_images)]
+            self.BULLET_GROUP_INDEXES[self.current_bullet_group] = (index + 1) % len(group_images)
+            return img
+        if not self.BULLET_IMAGES:
+            return None
+        return random.choice(self.BULLET_IMAGES)
     
     def _get_random_meteorite_image(self):
         """获取随机陨石图片"""
@@ -588,7 +688,8 @@ class Game:
                             offset_x = int(b.x) - rotated_rect.left
                             offset_y = int(b.y) - rotated_rect.top
                             
-                            if rotated_mask.overlap(self.BULLET_MASK, (offset_x, offset_y)):
+                            bullet_mask = getattr(b, "mask", self.BULLET_MASK)
+                            if rotated_mask.overlap(bullet_mask, (offset_x, offset_y)):
                                 if b in bullets:
                                     bullets.remove(b)
                                 e.hp -= 1
@@ -767,6 +868,7 @@ class Game:
         particles = []
         scroll = 0
         spawn_timer = 0
+        self.reset_bullet_group_timer()
         
         # 进入新关时先锁定空格，避免上一屏空格按下状态导致直接发射
         ignore_space = pygame.key.get_pressed()[pygame.K_SPACE]
@@ -780,6 +882,7 @@ class Game:
         while running:
             self.clock.tick(self.FPS)
             scroll += 1
+            self.update_bullet_group()
             
             # 事件处理
             result = self.handle_events()
@@ -844,6 +947,7 @@ class Game:
         
         scroll = 0
         spawn_timer = 0
+        self.reset_bullet_group_timer()
         
         # 进入无尽模式时先锁定空格，避免上一屏空格按下状态导致直接发射
         ignore_space = pygame.key.get_pressed()[pygame.K_SPACE]
@@ -862,6 +966,7 @@ class Game:
             self.clock.tick(self.FPS)
             scroll += 1
             difficulty_timer += 1
+            self.update_bullet_group()
             
             # 事件处理
             result = self.handle_events()
