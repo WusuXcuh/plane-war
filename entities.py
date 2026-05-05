@@ -4,7 +4,7 @@ import pygame
 import random
 import os
 import math
-from constants import PLAYER_SPEED, PLAYER_SHOOT_CD, BULLET_SPEED, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT, COLORS
+from constants import PLAYER_SPEED, PLAYER_SHOOT_CD, BULLET_SPEED, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT, COLORS, HEIGHT
 from utils import clamp
 
 class Player:
@@ -23,6 +23,8 @@ class Player:
         self.lives = 3
         self.max_hp = 100
         self.hp = self.max_hp
+        self.max_shield = self.max_hp * 2
+        self.shield = 0
         self.score = 0
         self.shoot_timer = self.SHOOT_CD  # 进入时有冷却，不立即发射
         self.invincible = 0   # 受伤后无敌帧
@@ -249,3 +251,47 @@ class Bullet:
             surf.blit(self.image, (int(self.x), int(self.y)))
         else:
             self.game.draw_bullet(surf, self.x + self.W // 2, self.y + self.H // 2, friendly=True)
+
+
+class PowerUp:
+    """陨石掉落的道具。"""
+    W, H = 32, 32
+    SPEED = 2.7
+
+    COLORS_BY_KIND = {
+        "repair": (80, 230, 140),
+        "score": (255, 215, 85),
+        "shield": (95, 205, 255),
+    }
+    LABELS_BY_KIND = {
+        "repair": "+",
+        "score": "$",
+        "shield": "S",
+    }
+
+    def __init__(self, x, y, kind):
+        self.x = x - self.W // 2
+        self.y = y - self.H // 2
+        self.kind = kind
+        self.float_timer = 0
+
+    @property
+    def rect(self):
+        return pygame.Rect(int(self.x), int(self.y), self.W, self.H)
+
+    def update(self):
+        self.float_timer += 1
+        self.y += self.SPEED
+        self.x += math.sin(self.float_timer * 0.08) * 0.55
+        return self.y > HEIGHT
+
+    def draw(self, surf, font):
+        rect = self.rect
+        color = self.COLORS_BY_KIND.get(self.kind, (255, 255, 255))
+        pygame.draw.circle(surf, (15, 24, 38), rect.center, self.W // 2)
+        pygame.draw.circle(surf, color, rect.center, self.W // 2, 3)
+        pygame.draw.circle(surf, (255, 255, 255), rect.center, self.W // 2 - 7, 1)
+
+        label = font.render(self.LABELS_BY_KIND.get(self.kind, "?"), True, color)
+        surf.blit(label, (rect.centerx - label.get_width() // 2,
+                          rect.centery - label.get_height() // 2))

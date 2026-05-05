@@ -5,7 +5,7 @@ import math
 import os
 import datetime
 from constants import WIDTH, HEIGHT, FPS, COLORS, RETURN_BUTTON_RECT, PLAYER_IMAGE, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT
-from entities import Player, Enemy, Bullet
+from entities import Player, Enemy, Bullet, PowerUp
 from interfaces import Interfaces
 from utils import create_button_surface
 
@@ -526,7 +526,12 @@ class Game:
         pygame.draw.rect(self.screen, (40, 40, 40), (x, y, width, height), border_radius=4)
         if fill_width > 0:
             pygame.draw.rect(self.screen, fill_color, (x, y, fill_width, height), border_radius=4)
-        pygame.draw.rect(self.screen, self.COLORS['WHITE'], (x, y, width, height), 2, border_radius=4)
+        shield = getattr(player, "shield", 0)
+        max_shield = max(1, getattr(player, "max_shield", player.max_hp * 2))
+        if shield > 0:
+            shield_height = max(1, height // 5)
+            shield_width = int(width * min(1, shield / max_shield))
+            pygame.draw.rect(self.screen, self.COLORS['WHITE'], (x, y + height - 3, shield_width, shield_height))
 
     def draw_endless_hud(self, player, spawn_interval, difficulty_level=None):
         """绘制无尽模式界面信息"""
@@ -641,10 +646,57 @@ class Game:
         # 玩家无敌状态由Player类自己更新
         
         return particles
+
+    def update_powerups(self, powerups):
+        """更新道具，移除掉出屏幕的道具。"""
+        powerups[:] = [powerup for powerup in powerups if not powerup.update()]
+
+    def _drop_powerup(self, powerups, enemy, difficulty):
+        """在陨石被击碎的位置掉落道具。"""
+        if powerups is None:
+            return
+
+        drop_chance = max(0.05, 0.50 - max(0, difficulty - 1) * 0.005)
+        if random.random() > drop_chance:
+            return
+
+        kind = random.choices(
+            ["score", "shield", "repair"],
+            weights=[0.20, 0.35, 0.45],
+            k=1
+        )[0]
+        powerups.append(PowerUp(enemy.x + enemy.W // 2, enemy.y + enemy.H // 2, kind))
+
+    def _apply_powerup(self, player, powerup):
+        """应用玩家拾取到的道具效果。"""
+        if powerup.kind == "repair":
+            player.hp = min(player.max_hp, player.hp + 20)
+            log(f"拾取维修道具：HP={player.hp}/{player.max_hp}")
+        elif powerup.kind == "score":
+            player.score += 200
+            log(f"拾取加分道具：当前分数={player.score}")
+        elif powerup.kind == "shield":
+            player.shield = min(player.max_shield, player.shield + 25)
+            log(f"拾取护盾道具：护盾={player.shield}/{player.max_shield}")
+
+    def handle_powerup_collisions(self, powerups, player):
+        """检测玩家拾取道具。"""
+        player_rect = pygame.Rect(int(player.x), int(player.y), player.W, player.H)
+        for powerup in powerups[:]:
+            if player_rect.colliderect(powerup.rect):
+                self._apply_powerup(player, powerup)
+                powerups.remove(powerup)
     
     def _damage_player(self, player, enemy):
         damage_min, damage_max = self.METEORITE_DAMAGE_RANGES[enemy.kind]
         damage = random.randint(damage_min, damage_max)
+        original_damage = damage
+        if player.shield > 0:
+            absorbed = min(player.shield, damage)
+            player.shield -= absorbed
+            damage -= absorbed
+            log(f"护盾抵消伤害：-{absorbed}，剩余护盾={player.shield}")
+
         player.hp = max(0, player.hp - damage)
 
         if player.hp <= 0:
@@ -653,12 +705,12 @@ class Game:
                 player.hp = player.max_hp
             player.invincible = 120
             player.can_shoot = False
-            return damage, True
+            return original_damage, True
 
         player.invincible = 45
-        return damage, False
+        return original_damage, False
 
-    def handle_collisions(self, bullets, enemies, particles, player, difficulty=1):
+    def handle_collisions(self, bullets, enemies, particles, player, difficulty=1, powerups=None):
         """处理碰撞检测"""
         # 限制碎裂体和概率扩展，避免高级关卡数量爆炸式增长
         clamped_difficulty = min(max(difficulty, 1), 12)
@@ -676,11 +728,13 @@ class Game:
                 expanded_e_h = e.H + 10
                 
                 if b.x + b.W > expanded_e_x and b.x < expanded_e_x + expanded_e_w and b.y + b.H > expanded_e_y and b.y < expanded_e_y + expanded_e_h:
+                    bullet_cx = b.x + b.W // 2
+                    bullet_cy = b.y + b.H // 2
+                    collision_x = bullet_cx
+                    collision_y = bullet_cy
                     # 子弹与陨石的碰撞检测（使用mask）
                     if e.meteorite_img:
                         try:
-                            bullet_cx = b.x + b.W // 2
-                            bullet_cy = b.y + b.H // 2
                             center_x = e.x + e.W // 2
                             center_y = e.y + e.H // 2
                             
@@ -727,6 +781,7 @@ class Game:
                             particles += self.make_explosion(collision_x, collision_y, n=30, r_range=(5, 15))
                             # 根据陨石大小给予不同分数
                             player.score += self.SIZE_SCORE[e.kind]
+                            self._drop_powerup(powerups, e, difficulty)
                             
                             # 生成小陨石：根据难度调整概率和数量
                             if e.kind > 1:  # 只有大于第二小的陨石才会碎裂
@@ -844,7 +899,7 @@ class Game:
         
         return particles
     
-    def draw_game(self, player, bullets, enemies, particles, scroll, level=None, score_target=None, spawn_interval=None, endless_difficulty=None):
+    def draw_game(self, player, bullets, enemies, particles, scroll, level=None, score_target=None, spawn_interval=None, endless_difficulty=None, powerups=None):
         """绘制游戏界面"""
         # 绘制背景
         self.draw_background(scroll)
@@ -856,6 +911,11 @@ class Game:
         # 绘制陨石
         for e in enemies:
             e.draw(self.screen)
+
+        # 绘制道具
+        if powerups:
+            for powerup in powerups:
+                powerup.draw(self.screen, self.font_s_bold)
         
         # 绘制爆炸效果
         self.draw_explosion(self.screen, particles)
@@ -879,6 +939,7 @@ class Game:
         bullets = []
         enemies = []
         particles = []
+        powerups = []
         scroll = 0
         spawn_timer = 0
         self.reset_bullet_group_timer()
@@ -918,12 +979,14 @@ class Game:
             
             # 更新游戏实体
             particles = self.update_entities(bullets, enemies, particles, player)
+            self.update_powerups(powerups)
             
             # 碰撞检测，传入难度参数
-            particles = self.handle_collisions(bullets, enemies, particles, player, difficulty=level)
+            particles = self.handle_collisions(bullets, enemies, particles, player, difficulty=level, powerups=powerups)
+            self.handle_powerup_collisions(powerups, player)
             
             # 绘制
-            self.draw_game(player, bullets, enemies, particles, scroll, level, score_target)
+            self.draw_game(player, bullets, enemies, particles, scroll, level, score_target, powerups=powerups)
             
             pygame.display.flip()
             
@@ -959,6 +1022,7 @@ class Game:
         bullets = []
         enemies = []
         particles = []
+        powerups = []
         
         scroll = 0
         spawn_timer = 0
@@ -1011,15 +1075,17 @@ class Game:
             
             # 更新游戏实体
             particles = self.update_entities(bullets, enemies, particles, player)
+            self.update_powerups(powerups)
             
             # 计算无尽模式难度
             # 碰撞检测，传入难度参数
-            particles = self.handle_collisions(bullets, enemies, particles, player, difficulty=endless_difficulty)
+            particles = self.handle_collisions(bullets, enemies, particles, player, difficulty=endless_difficulty, powerups=powerups)
+            self.handle_powerup_collisions(powerups, player)
             if self.update_high_score(player.score):
                 player.is_new_high_score = True
             
             # 绘制
-            self.draw_game(player, bullets, enemies, particles, scroll, spawn_interval=spawn_interval, endless_difficulty=endless_difficulty)
+            self.draw_game(player, bullets, enemies, particles, scroll, spawn_interval=spawn_interval, endless_difficulty=endless_difficulty, powerups=powerups)
             
             pygame.display.flip()
             
