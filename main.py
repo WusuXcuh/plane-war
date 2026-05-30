@@ -4,45 +4,16 @@ import sys
 import math
 import os
 import datetime
-from constants import WIDTH, HEIGHT, FPS, COLORS, RETURN_BUTTON_RECT, PLAYER_IMAGE, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT
+from constants import WIDTH, HEIGHT, FPS, COLORS, RETURN_BUTTON_RECT, PLAYER_IMAGE, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT, SHIELD_ALPHA, REPAIR_HEAL_AMOUNT, SCORE_POWERUP_AMOUNT, SHIELD_POWERUP_AMOUNT
 from entities import Player, Enemy, Bullet, PowerUp
 from interfaces import Interfaces
 from utils import create_button_surface
 
 # 日志记录函数
 def log(message):
-    """记录日志到debug文件夹中的log.txt文件"""
+    """输出日志到终端。"""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_message = f"[{timestamp}] {message}\n"
-    os.makedirs("debug", exist_ok=True)
-    log_file_path = "debug/log.txt"
-    
-    with open(log_file_path, "a", encoding="utf-8") as f:
-        f.write(log_message)
-    print(log_message.strip())
-    
-    # 检查日志行数并进行清理
-    _cleanup_log_file(log_file_path)
-
-
-def _cleanup_log_file(log_file_path):
-    """清理日志文件：超过1000行则删除第一行直至<=1000行"""
-    try:
-        if not os.path.exists(log_file_path):
-            return
-        
-        with open(log_file_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        
-        # 如果行数 > 1000，保留最后1000行（删除第一行直至<=1000）
-        if len(lines) > 1000:
-            lines = lines[-(1000):]
-            with open(log_file_path, "w", encoding="utf-8") as f:
-                f.writelines(lines)
-    
-    except Exception as e:
-        # 日志清理异常不应中断主程序
-        pass
+    print(f"[{timestamp}] {message}")
 
 class Game:
     def __init__(self):
@@ -55,6 +26,7 @@ class Game:
         
         # 颜色定义
         self.COLORS = COLORS
+        self.SHIELD_ALPHA = SHIELD_ALPHA
         
         # 陨石大小配置（0=最小 … 4=最大）
         self.SIZE_SCALE = [0.135, 0.24, 0.36, 0.525, 0.75]      # 相对基础形状的缩放（缩小到30%）
@@ -119,7 +91,7 @@ class Game:
         log("游戏初始化完成")
     
     def load_high_score(self):
-        """Load the saved highest score from user_data."""
+        """从 user_data 读取保存的最高分。"""
         try:
             os.makedirs(self.USER_DATA_DIR, exist_ok=True)
             if not os.path.exists(self.HIGH_SCORE_FILE):
@@ -128,17 +100,17 @@ class Game:
             with open(self.HIGH_SCORE_FILE, "r", encoding="utf-8") as f:
                 return max(0, int(f.read().strip() or 0))
         except (OSError, ValueError) as e:
-            log(f"Load high score failed: {e}")
+            log(f"读取最高分失败: {e}")
             return 0
 
     def save_high_score(self):
-        """Save the current highest score to user_data."""
+        """把当前最高分保存到 user_data。"""
         try:
             os.makedirs(self.USER_DATA_DIR, exist_ok=True)
             with open(self.HIGH_SCORE_FILE, "w", encoding="utf-8") as f:
                 f.write(str(self.high_score))
         except OSError as e:
-            log(f"Save high score failed: {e}")
+            log(f"保存最高分失败: {e}")
 
     def update_high_score(self, score):
         """Update highest score when the player gets a new record."""
@@ -504,8 +476,6 @@ class Game:
         self.screen.blit(txt, (15, 50))
         # 在关卡进度下方绘制血条
         self._draw_hp_bar(player, 15, 90, 220, 16)
-        hp_text = self.font_s_bold.render(f"HP: {player.hp}/{player.max_hp}", True, self.COLORS['RED'])
-        self.screen.blit(hp_text, (15, 110))
         self._draw_return_button()
     
 
@@ -526,12 +496,68 @@ class Game:
         pygame.draw.rect(self.screen, (40, 40, 40), (x, y, width, height), border_radius=4)
         if fill_width > 0:
             pygame.draw.rect(self.screen, fill_color, (x, y, fill_width, height), border_radius=4)
+
+        reduce_max_hp = max(0, getattr(player, "reduce_max_hp", 0))
+        max_hp = max(1, getattr(player, "max_hp", 1))
+        reduce_width = min(width, int(width * reduce_max_hp / max_hp))
+        if reduce_width > 0:
+            reduce_rect = pygame.Rect(x + width - reduce_width, y, reduce_width, height)
+            reduce_surface = pygame.Surface((reduce_width, height), pygame.SRCALPHA)
+            pygame.draw.rect(
+                reduce_surface,
+                (58, 58, 62, 235),
+                (0, 0, reduce_width, height),
+                border_radius=4
+            )
+
+            stripe_spacing = 7
+            stripe_width = 3
+            start_x = -height
+            while start_x < reduce_width:
+                pygame.draw.line(
+                    reduce_surface,
+                    (26, 26, 30, 210),
+                    (start_x, height),
+                    (start_x + height, 0),
+                    stripe_width
+                )
+                start_x += stripe_spacing
+
+            pygame.draw.line(reduce_surface, (150, 150, 155, 180), (0, 0), (0, height), 1)
+            pygame.draw.rect(
+                reduce_surface,
+                (18, 18, 22, 190),
+                (0, 0, reduce_width, height),
+                width=1,
+                border_radius=4
+            )
+            self.screen.blit(reduce_surface, reduce_rect.topleft)
+
         shield = getattr(player, "shield", 0)
         max_shield = max(1, getattr(player, "max_shield", player.max_hp * 2))
         if shield > 0:
-            shield_height = max(1, height // 5)
             shield_width = int(width * min(1, shield / max_shield))
-            pygame.draw.rect(self.screen, self.COLORS['WHITE'], (x, y + height - 3, shield_width, shield_height))
+            shield_surface = pygame.Surface((shield_width, height), pygame.SRCALPHA)
+            pygame.draw.rect(
+                shield_surface,
+                (230, 248, 255, self.SHIELD_ALPHA),
+                (0, 0, shield_width, height),
+                border_radius=4
+            )
+            pygame.draw.rect(
+                shield_surface,
+                (255, 255, 255, min(255, self.SHIELD_ALPHA + 35)),
+                (0, 1, shield_width, max(1, height // 3)),
+                border_radius=4
+            )
+            pygame.draw.rect(
+                shield_surface,
+                (255, 255, 255, 245),
+                (0, 0, shield_width, height),
+                width=2,
+                border_radius=4
+            )
+            self.screen.blit(shield_surface, (x, y))
 
     def draw_endless_hud(self, player, spawn_interval, difficulty_level=None):
         """绘制无尽模式界面信息"""
@@ -553,8 +579,6 @@ class Game:
         txt = self.font_s.render(f"命: {player.lives}", True, self.COLORS['CYAN'])
         self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 15))
         self._draw_hp_bar(player, 15, 120, 220, 16)
-        hp_text = self.font_s_bold.render(f"HP: {player.hp}/{player.max_hp}", True, self.COLORS['RED'])
-        self.screen.blit(hp_text, (15, 142))
         self._draw_return_button()
     
     def _draw_return_button(self):
@@ -670,13 +694,13 @@ class Game:
     def _apply_powerup(self, player, powerup):
         """应用玩家拾取到的道具效果。"""
         if powerup.kind == "repair":
-            player.hp = min(player.max_hp, player.hp + 20)
-            log(f"拾取维修道具：HP={player.hp}/{player.max_hp}")
+            player.hp = min(player.actual_max_hp, player.hp + REPAIR_HEAL_AMOUNT)
+            log(f"拾取维修道具：血量={player.hp}/{player.actual_max_hp}")
         elif powerup.kind == "score":
-            player.score += 200
+            player.score += SCORE_POWERUP_AMOUNT
             log(f"拾取加分道具：当前分数={player.score}")
         elif powerup.kind == "shield":
-            player.shield = min(player.max_shield, player.shield + 25)
+            player.shield = min(player.max_shield, player.shield + SHIELD_POWERUP_AMOUNT)
             log(f"拾取护盾道具：护盾={player.shield}/{player.max_shield}")
 
     def handle_powerup_collisions(self, powerups, player):
@@ -699,10 +723,18 @@ class Game:
 
         player.hp = max(0, player.hp - damage)
 
+        #减少的血量上限最大为玩家基础血量上限的75%
+        max_reduce_max_hp = player.max_hp * 3 / 4
+        player.reduce_max_hp = min(max_reduce_max_hp, player.reduce_max_hp + original_damage * 0.2) 
+        player.actual_max_hp = player.max_hp - player.reduce_max_hp
+        player.hp = min(player.hp, player.actual_max_hp)
+
         if player.hp <= 0:
             player.lives -= 1
             if player.lives > 0:
-                player.hp = player.max_hp
+                player.reduce_max_hp = 0
+                player.actual_max_hp = player.max_hp
+                player.hp = player.actual_max_hp
             player.invincible = 120
             player.can_shoot = False
             return original_damage, True
@@ -764,7 +796,7 @@ class Game:
                                 collision_y = bullet_cy
                                 particles += self.make_explosion(collision_x, collision_y, n=8, r_range=(2, 6))
                         except (pygame.error, ValueError, MemoryError) as ex:
-                            log(f"子弹-陨石 mask 碰撞失败 (种类{e.kind}): {ex}")
+                            log(f"子弹-陨石像素遮罩碰撞失败 (种类{e.kind}): {ex}")
                             bullet_cx = b.x + b.W // 2
                             bullet_cy = b.y + b.H // 2
                             center_x = e.x + e.W // 2
@@ -855,9 +887,9 @@ class Game:
                                 explosion_x = e.x + e.W // 2
                                 explosion_y = e.y + e.H // 2
                                 particles += self.make_explosion(explosion_x, explosion_y, n=40, r_range=(8, 20))
-                                log(f"飞机被陨石砸到（Mask碰撞）！当前分数：{player.score}")
+                                log(f"飞机被陨石砸到（像素遮罩碰撞）！当前分数：{player.score}")
                                 damage, died = self._damage_player(player, e)
-                                log(f"Player hit by meteorite kind {e.kind}: -{damage} HP, HP={player.hp}/{player.max_hp}, lives={player.lives}")
+                                log(f"玩家被 {e.kind} 级陨石击中：扣除 {damage} 点血量，当前血量={player.hp}/{player.max_hp}，剩余命数={player.lives}")
                                 enemies.remove(e)
                                 break
                             else:
@@ -873,7 +905,7 @@ class Game:
                                     particles += self.make_explosion(explosion_x, explosion_y, n=40, r_range=(8, 20))
                                     log(f"飞机被陨石砸到（距离碰撞）！当前分数：{player.score}")
                                     damage, died = self._damage_player(player, e)
-                                    log(f"Player hit by meteorite kind {e.kind}: -{damage} HP, HP={player.hp}/{player.max_hp}, lives={player.lives}")
+                                    log(f"玩家被 {e.kind} 级陨石击中：扣除 {damage} 点血量，当前血量：{player.hp}/{player.max_hp}，剩余命数：{player.lives}")
                                     enemies.remove(e)
                                     break
                         except (pygame.error, ValueError, MemoryError, IndexError) as ex:
@@ -890,7 +922,7 @@ class Game:
                                 particles += self.make_explosion(explosion_x, explosion_y, n=40, r_range=(8, 20))
                                 log(f"飞机被陨石砸到（异常恢复）！当前分数：{player.score}")
                                 damage, died = self._damage_player(player, e)
-                                log(f"Player hit by meteorite kind {e.kind}: -{damage} HP, HP={player.hp}/{player.max_hp}, lives={player.lives}")
+                                log(f"玩家被 {e.kind} 级陨石击中：扣除 {damage} 点血量，当前血量：{player.hp}/{player.max_hp}，剩余命数：{player.lives}")
                                 enemies.remove(e)
                                 break
         else:
@@ -933,6 +965,7 @@ class Game:
             self.draw_endless_hud(player, spawn_interval, endless_difficulty)
     
     def game_screen(self, level):
+        self.current_level = level
         """游戏主界面"""
         log(f"开始关卡 {level}")
         player = Player(self)
@@ -1017,6 +1050,7 @@ class Game:
     def endless_mode(self):
         """无尽模式"""
         log("开始无尽模式")
+        self.current_level = 100
         player = Player(self)
         player.is_new_high_score = False
         bullets = []
@@ -1032,7 +1066,7 @@ class Game:
         ignore_space = pygame.key.get_pressed()[pygame.K_SPACE]
         
         # 初始生成间隔
-        endless_difficulty = 80
+        endless_difficulty = 90
         spawn_interval = self._calculate_level_spawn_interval(endless_difficulty)
         # 难度增加计数器
         difficulty_timer = 0

@@ -14,6 +14,7 @@ class Player:
     
     def __init__(self, game):
         self.game = game
+        level = self.game.current_level
         # 从游戏对象获取飞机图片的实际大小
         self.W, self.H = game.PLAYER_IMG.get_size()
         self.x = (game.WIDTH - self.W) // 2
@@ -21,8 +22,10 @@ class Player:
         min_y = game.HEIGHT * 2/3
         self.y = max(min_y, game.HEIGHT - self.H - 10)
         self.lives = 3
-        self.max_hp = 100
-        self.hp = self.max_hp
+        self.max_hp = 100 - 5 * ((level - 1) // 10)  # 随关卡增加难度，降低玩家基础HP上限
+        self.reduce_max_hp = 0  # 由于受到伤害而减少的HP上限
+        self.actual_max_hp = self.max_hp - self.reduce_max_hp  # 实际的HP上限
+        self.hp = self.actual_max_hp
         self.max_shield = self.max_hp * 2
         self.shield = 0
         self.score = 0
