@@ -1,119 +1,131 @@
 import pygame
-import random
 import sys
-import math
 import os
 import datetime
-from constants import WIDTH, HEIGHT, FPS, COLORS, RETURN_BUTTON_RECT, PLAYER_IMAGE, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT, SHIELD_ALPHA, REPAIR_HEAL_AMOUNT, SCORE_POWERUP_AMOUNT, SHIELD_POWERUP_AMOUNT
-from entities import Player, Enemy, Bullet, PowerUp
+from assets import AssetManager
+from constants import (
+    COLORS,
+    FPS,
+    HEIGHT,
+    MAX_ENEMIES,
+    MAX_PARTICLES,
+    METEORITE_DAMAGE_RANGES,
+    METEORITE_SIZE_HP,
+    METEORITE_SIZE_SCALE,
+    METEORITE_SIZE_SCORE,
+    METEORITE_SIZE_SPEEDS,
+    RETURN_BUTTON_RECT,
+    SHIELD_ALPHA,
+    WIDTH,
+)
+from entities import Player
+from effects import Effects
 from interfaces import Interfaces
-from utils import create_button_surface
+from renderer import Renderer
+from rules import (
+    ENDLESS_BASE_DIFFICULTY,
+    ENDLESS_DIFFICULTY_INCREASE_INTERVAL,
+    calculate_next_high_score_checkpoint,
+    calculate_level_spawn_interval,
+    calculate_score_target,
+    increase_endless_difficulty,
+    should_update_high_score_checkpoint,
+)
+from storage import HighScoreStore
+from systems import GameSystems
 
-# 日志记录函数
 def log(message):
     """输出日志到终端。"""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}")
 
 class Game:
-    def __init__(self):
-        # 初始化 pygame
+    """游戏总控：负责初始化各子系统，并调度关卡、无尽模式和界面流程。"""
+
+    def __init__(self, runtime_tools_factory=None):
         pygame.init()
+        self.runtime_tools = None
         
-        # 游戏常量
+        # 基础配置
         self.WIDTH, self.HEIGHT = WIDTH, HEIGHT
         self.FPS = FPS
-        
-        # 颜色定义
         self.COLORS = COLORS
         self.SHIELD_ALPHA = SHIELD_ALPHA
         
-        # 陨石大小配置（0=最小 … 4=最大）
-        self.SIZE_SCALE = [0.135, 0.24, 0.36, 0.525, 0.75]      # 相对基础形状的缩放（缩小到30%）
-        self.SIZE_HP = [1, 1, 2, 4, 7]                  # 血量
-        self.SIZE_SCORE = [60, 50, 80, 120, 240]              # 得分翻倍（最小陨石60分，第二小陨石50分，中等大小陨石80分）
-        self.SIZE_SPEEDS = [(3.2,5.5),(2.4,4.0),(1.7,3.2),(1.0,2.0),(0.6,1.2)]  # 速度范围
+        # 陨石等级配置：索引 0 最小，索引 4 最大。
+        self.SIZE_SCALE = METEORITE_SIZE_SCALE
+        self.SIZE_HP = METEORITE_SIZE_HP
+        self.SIZE_SCORE = METEORITE_SIZE_SCORE
+        self.SIZE_SPEEDS = METEORITE_SIZE_SPEEDS
         
         # 屏幕和时钟
         self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
         pygame.display.set_caption("飞机大战")
         self.clock = pygame.time.Clock()
         
-        # 字体
-        self.font_s = self._load_font(24)
-        self.font_s_bold = self._load_font(24)
+        # 资源管理器负责字体、图片、子弹组、星空等加载和随机选择。
+        base_dir = os.path.dirname(__file__)
+        self.assets = AssetManager(self, base_dir)
+
+        self.font_s = self.assets.load_font(24)
+        self.font_s_bold = self.assets.load_font(24)
         try:
             self.font_s_bold.set_bold(True)
         except Exception:
             pass
-        self.font_m = self._load_font(40)
-        self.font_l = self._load_font(60)
+        self.font_m = self.assets.load_font(40)
+        self.font_l = self.assets.load_font(60)
         
-        # 加载玩家飞机图片
-        self.PLAYER_IMG = self._load_player_image()
-        self.PLAYER_MASK = pygame.mask.from_surface(self.PLAYER_IMG, 127)  # 降低阈值，确保更多像素被认为是实心的
+        # 玩家飞机资源和像素级碰撞遮罩。
+        self.PLAYER_IMG = self.assets.load_player_image()
+        self.PLAYER_MASK = pygame.mask.from_surface(self.PLAYER_IMG, 127)
         self.RETURN_BUTTON_RECT = pygame.Rect(*RETURN_BUTTON_RECT)
         
-        # 加载陨石图片缓存
-        self.METEORITE_IMG_CACHE = {}
+        # 陨石原图缓存由资源管理器加载，缩放后的陨石图由渲染器按需缓存。
+        self.METEORITE_IMG_CACHE = self.assets.load_meteorite_images()
         self.SCALED_METEORITE_CACHE = {}
-        self._load_meteorite_images()
 
-        # 加载玩家子弹图片缓存
-        self.BULLET_IMAGES = []
-        self.BULLET_IMAGE_GROUPS = {}
-        self.BULLET_GROUP_INDEXES = {}
-        self.current_bullet_group = None
-        self.bullet_switch_timer = 0
-        self._load_bullet_images()
+        # 子弹图片仍挂在游戏对象上，兼容子弹构造时的访问方式。
+        self.assets.load_bullet_images()
+        self.BULLET_IMAGES = self.assets.bullet_images
+        self.BULLET_IMAGE_GROUPS = self.assets.bullet_image_groups
+        self.BULLET_GROUP_INDEXES = self.assets.bullet_group_indexes
+        self.POWERUP_IMAGES = self.assets.load_powerup_images()
         
         # 星空背景
-        self.stars = [(random.randint(0, self.WIDTH), random.randint(0, self.HEIGHT), random.random()) for _ in range(120)]
+        self.stars = self.assets.create_stars(self.WIDTH, self.HEIGHT)
         
-        # 数量限制，避免关卡末期陨石数量失控导致卡顿
-        self.MAX_ENEMIES = 40
-        self.MAX_PARTICLES = 120
+        # 系统运行参数，供规则系统和特效系统等子模块共享。
+        self.MAX_ENEMIES = MAX_ENEMIES
+        self.MAX_PARTICLES = MAX_PARTICLES
         self.DEBUG_COLLISION = False
-        self.METEORITE_DAMAGE_RANGES = [(5, 15), (15, 25), (35, 45), (55, 65), (76, 85)]
-        self.USER_DATA_DIR = os.path.join(os.path.dirname(__file__), "user_data")
-        self.HIGH_SCORE_FILE = os.path.join(self.USER_DATA_DIR, "high_score.txt")
+        self.METEORITE_DAMAGE_RANGES = METEORITE_DAMAGE_RANGES
+        self.high_score_store = HighScoreStore(base_dir, log)
         self.high_score = self.load_high_score()
         
-        # 为子弹创建共享碰撞掩码
-        bullet_surface = pygame.Surface((Bullet.W, Bullet.H), pygame.SRCALPHA)
-        pygame.draw.rect(bullet_surface, (255, 255, 255, 255), (0, 0, Bullet.W, Bullet.H))
-        self.BULLET_MASK = pygame.mask.from_surface(bullet_surface)
+        # 默认子弹遮罩，供没有图片的子弹使用。
+        self.BULLET_MASK = self.assets.create_default_bullet_mask()
         
-        # 界面管理
+        # 子系统按职责拆分：特效、渲染、规则系统、界面。
+        self.effects = Effects(self)
+        self.renderer = Renderer(self)
+        self.systems = GameSystems(self)
         self.interfaces = Interfaces(self)
+        if runtime_tools_factory:
+            self.runtime_tools = runtime_tools_factory(self, log)
         
-        # 记录游戏初始化
         log("游戏初始化完成")
     
     def load_high_score(self):
-        """从 user_data 读取保存的最高分。"""
-        try:
-            os.makedirs(self.USER_DATA_DIR, exist_ok=True)
-            if not os.path.exists(self.HIGH_SCORE_FILE):
-                return 0
-
-            with open(self.HIGH_SCORE_FILE, "r", encoding="utf-8") as f:
-                return max(0, int(f.read().strip() or 0))
-        except (OSError, ValueError) as e:
-            log(f"读取最高分失败: {e}")
-            return 0
+        """从存储模块读取最高分。"""
+        return self.high_score_store.load()
 
     def save_high_score(self):
-        """把当前最高分保存到 user_data。"""
-        try:
-            os.makedirs(self.USER_DATA_DIR, exist_ok=True)
-            with open(self.HIGH_SCORE_FILE, "w", encoding="utf-8") as f:
-                f.write(str(self.high_score))
-        except OSError as e:
-            log(f"保存最高分失败: {e}")
+        """通过存储模块保存最高分。"""
+        self.high_score_store.save(self.high_score)
 
     def update_high_score(self, score):
-        """Update highest score when the player gets a new record."""
+        """在玩家刷新纪录时保存最高分。"""
         if score > self.high_score:
             self.high_score = score
             self.save_high_score()
@@ -126,507 +138,22 @@ class Game:
         self.DEBUG_COLLISION = not self.DEBUG_COLLISION
         log(f"碰撞调试模式: {'启用' if self.DEBUG_COLLISION else '禁用'}")
         
-    def _load_font(self, size):
-        """加载字体"""
-        # 尝试加载系统中常用的中文字体
-        font_paths = [
-            "C:/Windows/Fonts/simhei.ttf",  # 黑体
-            "C:/Windows/Fonts/simsun.ttc",  # 宋体
-            "C:/Windows/Fonts/microsoftyahei.ttf",  # 微软雅黑
-            "C:/Windows/Fonts/msyh.ttf",  # 微软雅黑
-        ]
-        
-        for font_path in font_paths:
-            try:
-                if os.path.exists(font_path):
-                    font = pygame.font.Font(font_path, size)
-                    # 测试字体是否能渲染中文
-                    test_surface = font.render("测试", True, (255, 255, 255))
-                    if test_surface.get_width() > 0:
-                        log(f"成功加载中文字体: {font_path}")
-                        return font
-            except Exception as e:
-                log(f"尝试加载字体 {font_path} 失败: {e}")
-                pass
-        
-        # 如果没有找到中文字体，尝试使用系统默认字体
-        try:
-            font = pygame.font.SysFont(None, size)
-            log(f"使用系统默认字体，大小: {size}")
-            return font
-        except Exception as e:
-            log(f"加载系统默认字体失败: {e}")
-            
-        # 如果所有尝试都失败，返回一个基本的字体对象
-        class DummyFont:
-            def __init__(self):
-                self.bold = False
-
-            def set_bold(self, value):
-                self.bold = bool(value)
-
-            def render(self, text, antialias, color):
-                surface = pygame.Surface((len(text) * 10, size), pygame.SRCALPHA)
-                surface.fill((0, 0, 0, 0))
-                return surface
-        log("使用虚拟字体")
-        return DummyFont()
-    
-    def _load_player_image(self):
-        """加载玩家飞机图片，保持原始长宽比例"""
-        path = os.path.join(os.path.dirname(__file__), PLAYER_IMAGE)
-        raw = pygame.image.load(path).convert_alpha()
-        
-        # 计算原始图片的宽高比
-        original_width, original_height = raw.get_size()
-        aspect_ratio = original_width / original_height
-        
-        # 设定目标宽度，保持比例计算高度
-        target_width = 60
-        target_height = int(target_width / aspect_ratio)
-        
-        log(f"飞机图片原始尺寸: {original_width}x{original_height}, 缩放后: {target_width}x{target_height}")
-        
-        return pygame.transform.smoothscale(raw, (target_width, target_height))
-    
-    def _load_meteorite_images(self):
-        """加载所有陨石图片"""
-        meteorite_dir = os.path.join(os.path.dirname(__file__), "pictures/meteorite")
-        if not os.path.exists(meteorite_dir):
-            log(f"陨石图片目录不存在: {meteorite_dir}")
-            return
-        
-        # 获取目录中所有 PNG 文件
-        image_files = [f for f in os.listdir(meteorite_dir) if f.endswith('.png')]
-        if not image_files:
-            log("陨石目录中没有找到任何图片")
-            return
-        
-        # 加载所有图片
-        for img_file in image_files:
-            try:
-                path = os.path.join(meteorite_dir, img_file)
-                img = pygame.image.load(path).convert_alpha()
-                self.METEORITE_IMG_CACHE[img_file] = img
-                log(f"成功加载陨石图片: {img_file}")
-            except Exception as e:
-                log(f"加载陨石图片 {img_file} 失败: {e}")
-
-    def _load_bullet_images(self):
-        """加载所有玩家子弹图片，并缩放到适合游戏画面的尺寸。"""
-        bullet_dir = os.path.join(os.path.dirname(__file__), "pictures/bullets")
-        if not os.path.exists(bullet_dir):
-            log(f"子弹图片目录不存在: {bullet_dir}")
-            return
-
-        group_dirs = [
-            name for name in sorted(os.listdir(bullet_dir))
-            if os.path.isdir(os.path.join(bullet_dir, name))
-        ]
-        if group_dirs:
-            image_groups = {
-                group_name: [
-                    os.path.join(group_name, f)
-                    for f in sorted(os.listdir(os.path.join(bullet_dir, group_name)))
-                    if f.lower().endswith(".png")
-                ]
-                for group_name in group_dirs
-            }
-        else:
-            image_groups = {
-                "default": [
-                    f for f in sorted(os.listdir(bullet_dir))
-                    if f.lower().endswith(".png")
-                ]
-            }
-
-        if not any(image_groups.values()):
-            log("子弹目录中没有找到任何图片")
-            return
-
-        for group_name, image_files in image_groups.items():
-            group_images = []
-            for img_file in image_files:
-                try:
-                    path = os.path.join(bullet_dir, img_file)
-                    raw = pygame.image.load(path).convert_alpha()
-                    original_width, original_height = raw.get_size()
-                    scale = min(BULLET_TARGET_WIDTH / original_width, BULLET_TARGET_HEIGHT / original_height)
-                    target_width = max(1, int(original_width * scale))
-                    target_height = max(1, int(original_height * scale))
-                    img = pygame.transform.smoothscale(raw, (target_width, target_height))
-                    img = pygame.transform.rotate(img, 90)
-                    group_images.append(img)
-                    self.BULLET_IMAGES.append(img)
-                except Exception as e:
-                    log(f"加载子弹图片 {img_file} 失败: {e}")
-            if group_images:
-                self.BULLET_IMAGE_GROUPS[group_name] = group_images
-                self.BULLET_GROUP_INDEXES[group_name] = 0
-
-        if self.BULLET_IMAGE_GROUPS:
-            self.current_bullet_group = random.choice(list(self.BULLET_IMAGE_GROUPS.keys()))
-            self.BULLET_GROUP_INDEXES[self.current_bullet_group] = 0
-
-        log(f"成功加载子弹图片: {len(self.BULLET_IMAGES)} 张，分组: {len(self.BULLET_IMAGE_GROUPS)} 组")
-
     def reset_bullet_group_timer(self):
-        """重置子弹分组切换计时器。"""
-        self.bullet_switch_timer = 0
-        if self.BULLET_IMAGE_GROUPS:
-            self.current_bullet_group = random.choice(list(self.BULLET_IMAGE_GROUPS.keys()))
-            self.BULLET_GROUP_INDEXES[self.current_bullet_group] = 0
+        """重置子弹图片组轮换计时器。"""
+        self.assets.reset_bullet_group_timer()
 
     def update_bullet_group(self):
-        """每20秒随机切换到另一组子弹图片。"""
-        if len(self.BULLET_IMAGE_GROUPS) <= 1:
-            return
-
-        self.bullet_switch_timer += 1
-        if self.bullet_switch_timer < self.FPS * 10:
-            return
-
-        self.bullet_switch_timer = 0
-        groups = [group for group in self.BULLET_IMAGE_GROUPS if group != self.current_bullet_group]
-        self.current_bullet_group = random.choice(groups)
-        self.BULLET_GROUP_INDEXES[self.current_bullet_group] = 0
-        log(f"切换子弹类型: {self.current_bullet_group}")
+        """按固定间隔切换当前子弹图片组。"""
+        self.assets.update_bullet_group(self.FPS)
 
     def get_bullet_image(self):
-        """获取一张玩家子弹图片。"""
-        if self.current_bullet_group in self.BULLET_IMAGE_GROUPS:
-            group_images = self.BULLET_IMAGE_GROUPS[self.current_bullet_group]
-            index = self.BULLET_GROUP_INDEXES.get(self.current_bullet_group, 0)
-            img = group_images[index % len(group_images)]
-            self.BULLET_GROUP_INDEXES[self.current_bullet_group] = (index + 1) % len(group_images)
-            return img
-        if not self.BULLET_IMAGES:
-            return None
-        return random.choice(self.BULLET_IMAGES)
-    
+        """供子弹创建时获取当前子弹图片。"""
+        return self.assets.get_bullet_image()
+
     def _get_random_meteorite_image(self):
-        """获取随机陨石图片"""
-        if not self.METEORITE_IMG_CACHE:
-            return None
-        return random.choice(list(self.METEORITE_IMG_CACHE.values()))
-    
-    def draw_player(self, surf, cx, cy):
-        """绘制玩家飞机"""
-        w, h = self.PLAYER_IMG.get_size()
-        surf.blit(self.PLAYER_IMG, (cx - w // 2, cy - h // 2))
-    
-    def draw_enemy(self, surf, cx, cy, size=1, rotation=0, img=None):
-        """绘制敌人（陨石）"""
-        if img:
-            # 使用图片绘制陨石
-            sc = self.SIZE_SCALE[size]
-            img_width, img_height = img.get_size()
-            
-            # 计算缩放后的尺寸
-            scaled_width = int(img_width * sc)
-            scaled_height = int(img_height * sc)
-            
-            # 缩放图片
-            cache_key = (id(img), size, scaled_width, scaled_height)
-            scaled_img = self.SCALED_METEORITE_CACHE.get(cache_key)
-            if scaled_img is None:
-                scaled_img = pygame.transform.smoothscale(img, (scaled_width, scaled_height))
-                self.SCALED_METEORITE_CACHE[cache_key] = scaled_img
-            
-            # 旋转图片（转换为度数）
-            rotation_deg = int(rotation * 180 / math.pi)
-            rotated_img = pygame.transform.rotate(scaled_img, rotation_deg)
-            
-            # 获取旋转后的矩形
-            rect = rotated_img.get_rect(center=(cx, cy))
-            
-            # 绘制到表面
-            surf.blit(rotated_img, rect.topleft)
-        else:
-            # 如果没有图片，使用多边形作为备选方案
-            self._draw_enemy_polygon(surf, cx, cy, size, rotation)
-    
-    def _draw_enemy_polygon(self, surf, cx, cy, size=1, rotation=0):
-        """绘制敌人多边形（备选方案）"""
-        sc = self.SIZE_SCALE[size]
-        
-        # 颜色随大小变深
-        colors = [
-            ((140,110, 75),( 80, 58, 32),(195,165,120)),  # 0 最小
-            ((120, 90, 60),( 70, 50, 30),(180,150,110)),  # 1
-            ((108, 76, 44),( 60, 40, 18),(168,132, 90)),  # 2
-            (( 95, 62, 30),( 50, 30, 10),(155,115, 68)),  # 3
-            (( 80, 48, 20),( 38, 20,  5),(135, 95, 50)),  # 4 最大
-        ]
-        ROCK, ROCK_DARK, ROCK_LIT = colors[size]
-        
-        def sp(x, y):
-            # 应用旋转
-            angle = rotation
-            rx = x * math.cos(angle) - y * math.sin(angle)
-            ry = x * math.sin(angle) + y * math.cos(angle)
-            return (cx + int(rx * sc), cy + int(ry * sc))
-        
-        pts = [sp(-13,-24), sp(8,-26), sp(24,-10), sp(26, 8),
-               sp(13, 26), sp(-8,29), sp(-24, 13), sp(-29,-5)]
-        pygame.draw.polygon(surf, ROCK, pts)
-        lw = max(1, int(2 * sc))
-        pygame.draw.polygon(surf, ROCK_DARK, pts, lw)
-        
-        # 坑洞
-        pygame.draw.circle(surf, ROCK_DARK, sp(5, -5), max(1, int(6 * sc)))
-        pygame.draw.circle(surf, ROCK_DARK, sp(-10, 10), max(1, int(4 * sc)))
-        if size >= 2:
-            pygame.draw.circle(surf, ROCK_DARK, sp(3, 18), max(1, int(3 * sc)))
-        if size >= 3:
-            pygame.draw.circle(surf, ROCK_DARK, sp(-5, -16), max(1, int(3 * sc)))
-        
-        # 高光
-        pygame.draw.polygon(surf, ROCK_LIT, [sp(-10,-18), sp(3,-21), sp(10,-8), sp(-3,-5)])
-    
-    def draw_bullet(self, surf, x, y, friendly=True):
-        """绘制子弹"""
-        if friendly:
-            pygame.draw.rect(surf, self.COLORS['YELLOW'], (x - 2, y - 8, 4, 16), border_radius=2)
-            glow = pygame.Surface((10, 20), pygame.SRCALPHA)
-            pygame.draw.ellipse(glow, (255, 255, 0, 60), (0, 0, 10, 20))
-            surf.blit(glow, (x - 5, y - 10))
-        else:
-            # 碎石外观（小而清晰）
-            ROCK = (150, 115, 75)
-            ROCK_DARK = (80, 55, 30)
-            ROCK_LIT = (210, 175, 120)
-            pts = [
-                (x - 2, y - 4),
-                (x + 2, y - 5),
-                (x + 5, y - 1),
-                (x + 4, y + 3),
-                (x + 1, y + 5),
-                (x - 3, y + 3),
-                (x - 5, y - 0),
-            ]
-            pygame.draw.polygon(surf, ROCK, pts)
-            pygame.draw.polygon(surf, ROCK_DARK, pts, 1)
-            pygame.draw.line(surf, ROCK_LIT, (x - 1, y - 3), (x + 2, y - 4), 1)
-    
-    def draw_explosion(self, surf, particles):
-        """绘制爆炸效果"""
-        for p in particles:
-            alpha = max(0, int(255 * p["life"] / p["max_life"]))
-            r = max(1, int(p["r"] * p["life"] / p["max_life"]))
-            c = (*p["color"], alpha)
-            s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-            pygame.draw.circle(s, c, (r, r), r)
-            surf.blit(s, (int(p["x"]) - r, int(p["y"]) - r))
-    
-    def draw_background(self, scroll):
-        """绘制背景"""
-        self.screen.fill(self.COLORS['BLACK'])
-        for sx, sy, sp in self.stars:
-            ny = (sy + scroll * sp * 0.5) % self.HEIGHT
-            b = int(100 + 155 * sp)
-            r = 1 if sp < 0.5 else 2
-            pygame.draw.circle(self.screen, (b, b, b), (sx, int(ny)), r)
-    
-    def make_explosion(self, cx, cy, n=24, colors=None, r_range=(4, 12), speed_range=(1.5, 5)):
-        """创建爆炸粒子"""
-        if colors is None:
-            colors = [self.COLORS['RED'], self.COLORS['ORANGE'], self.COLORS['YELLOW'], self.COLORS['WHITE']]
-        particles = []
-        for _ in range(n):
-            angle = random.uniform(0, 6.28)
-            speed = random.uniform(*speed_range)
-            life = random.randint(20, 45)
-            particles.append({
-                "x": cx, "y": cy,
-                "vx": speed * math.cos(angle),
-                "vy": speed * math.sin(angle),
-                "r": random.randint(*r_range),
-                "color": random.choice(colors),
-                "life": life, "max_life": life,
-            })
-        return particles
-    
-    def update_particles(self, particles):
-        """更新粒子状态"""
-        alive = []
-        for p in particles:
-            p["x"] += p["vx"]
-            p["y"] += p["vy"]
-            p["vy"] += 0.15   # 重力
-            p["life"] -= 1
-            if p["life"] > 0:
-                alive.append(p)
-        return alive
-    
-    def draw_hud(self, player, level, score_target):
-        """绘制游戏界面信息"""
-        # 分数
-        txt = self.font_s.render(f"得分: {player.score}", True, self.COLORS['WHITE'])
-        self.screen.blit(txt, (15, 15))
-        # 关卡
-        txt = self.font_s.render(f"关卡: {level}", True, self.COLORS['YELLOW'])
-        self.screen.blit(txt, (self.WIDTH // 2 - txt.get_width() // 2, 15))
-        # 生命
-        txt = self.font_s.render(f"命: {player.lives}", True, self.COLORS['CYAN'])
-        self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 15))
-        # 目标分数
-        progress = min(100, int(player.score / score_target * 100))
-        txt = self.font_s.render(f"目标: {player.score}/{score_target} ({progress}%)", True, self.COLORS['GREEN'])
-        self.screen.blit(txt, (15, 50))
-        # 在关卡进度下方绘制血条
-        self._draw_hp_bar(player, 15, 90, 220, 16)
-        self._draw_return_button()
-    
+        """供菜单背景陨石获取随机贴图。"""
+        return self.assets.get_random_meteorite_image(self.METEORITE_IMG_CACHE)
 
-    def _draw_hp_bar(self, player, x, y, width, height):
-        """绘制玩家血条。"""
-        hp_ratio = max(0, min(1, player.hp / player.max_hp))
-        fill_width = int(width * hp_ratio)
-
-        # 根据剩余血量切换颜色
-        if hp_ratio > 0.6:
-            fill_color = self.COLORS['GREEN']
-        elif hp_ratio > 0.3:
-            fill_color = self.COLORS['YELLOW']
-        else:
-            fill_color = self.COLORS['RED']
-
-        # 依次绘制底色、当前血量和边框
-        pygame.draw.rect(self.screen, (40, 40, 40), (x, y, width, height), border_radius=4)
-        if fill_width > 0:
-            pygame.draw.rect(self.screen, fill_color, (x, y, fill_width, height), border_radius=4)
-
-        reduce_max_hp = max(0, getattr(player, "reduce_max_hp", 0))
-        max_hp = max(1, getattr(player, "max_hp", 1))
-        reduce_width = min(width, int(width * reduce_max_hp / max_hp))
-        if reduce_width > 0:
-            reduce_rect = pygame.Rect(x + width - reduce_width, y, reduce_width, height)
-            reduce_surface = pygame.Surface((reduce_width, height), pygame.SRCALPHA)
-            pygame.draw.rect(
-                reduce_surface,
-                (58, 58, 62, 235),
-                (0, 0, reduce_width, height),
-                border_radius=4
-            )
-
-            stripe_spacing = 7
-            stripe_width = 3
-            start_x = -height
-            while start_x < reduce_width:
-                pygame.draw.line(
-                    reduce_surface,
-                    (26, 26, 30, 210),
-                    (start_x, height),
-                    (start_x + height, 0),
-                    stripe_width
-                )
-                start_x += stripe_spacing
-
-            pygame.draw.line(reduce_surface, (150, 150, 155, 180), (0, 0), (0, height), 1)
-            pygame.draw.rect(
-                reduce_surface,
-                (18, 18, 22, 190),
-                (0, 0, reduce_width, height),
-                width=1,
-                border_radius=4
-            )
-            self.screen.blit(reduce_surface, reduce_rect.topleft)
-
-        shield = getattr(player, "shield", 0)
-        max_shield = max(1, getattr(player, "max_shield", player.max_hp * 2))
-        if shield > 0:
-            shield_width = int(width * min(1, shield / max_shield))
-            shield_surface = pygame.Surface((shield_width, height), pygame.SRCALPHA)
-            pygame.draw.rect(
-                shield_surface,
-                (230, 248, 255, self.SHIELD_ALPHA),
-                (0, 0, shield_width, height),
-                border_radius=4
-            )
-            pygame.draw.rect(
-                shield_surface,
-                (255, 255, 255, min(255, self.SHIELD_ALPHA + 35)),
-                (0, 1, shield_width, max(1, height // 3)),
-                border_radius=4
-            )
-            pygame.draw.rect(
-                shield_surface,
-                (255, 255, 255, 245),
-                (0, 0, shield_width, height),
-                width=2,
-                border_radius=4
-            )
-            self.screen.blit(shield_surface, (x, y))
-
-    def draw_endless_hud(self, player, spawn_interval, difficulty_level=None):
-        """绘制无尽模式界面信息"""
-        # 难度（放在左上角）
-        if difficulty_level is None:
-            base_interval = self._calculate_level_spawn_interval(80)
-            difficulty_level = 80 + max(0, (base_interval - spawn_interval) // 2)
-        txt = self.font_s.render(f"难度: {difficulty_level}", True, self.COLORS['ORANGE'])
-        self.screen.blit(txt, (15, 15))
-        # 分数
-        txt = self.font_s.render(f"得分: {player.score}", True, self.COLORS['WHITE'])
-        self.screen.blit(txt, (15, 50))
-        txt = self.font_s.render(f"最高记录: {self.high_score}", True, self.COLORS['YELLOW'])
-        self.screen.blit(txt, (15, 85))
-        # 模式
-        txt = self.font_s.render("模式: 无尽", True, self.COLORS['MAGENTA'])
-        self.screen.blit(txt, (self.WIDTH // 2 - txt.get_width() // 2, 15))
-        # 生命
-        txt = self.font_s.render(f"命: {player.lives}", True, self.COLORS['CYAN'])
-        self.screen.blit(txt, (self.WIDTH - txt.get_width() - 15, 15))
-        self._draw_hp_bar(player, 15, 120, 220, 16)
-        self._draw_return_button()
-    
-    def _draw_return_button(self):
-        """绘制统一的返回按钮"""
-        btn_surface = create_button_surface((self.RETURN_BUTTON_RECT.width, self.RETURN_BUTTON_RECT.height),
-                                           (255, 100, 100, 120),
-                                           (255, 150, 150, 200),
-                                           border_radius=8)
-        self.screen.blit(btn_surface, self.RETURN_BUTTON_RECT.topleft)
-        return_txt = self.font_s.render("返回", True, self.COLORS['WHITE'])
-        self.screen.blit(return_txt, (
-            self.RETURN_BUTTON_RECT.centerx - return_txt.get_width() // 2,
-            self.RETURN_BUTTON_RECT.centery - return_txt.get_height() // 2
-        ))
-
-    def _player_shoot(self, player, bullets):
-        """处理玩家射击逻辑"""
-        if player.try_shoot():
-            bullet_x = player.x + player.W // 2
-            bullet_y = player.y + 30
-            bullets.append(Bullet(bullet_x, bullet_y, self))
-
-    def _calculate_level_spawn_interval(self, level):
-        return max(10, 55 - (level - 1) // 10 * 5)
-
-    def _calculate_score_target(self, level):
-        return 1000 + (level - 1) * 1000
-
-    def _calculate_endless_difficulty(self, spawn_interval):
-        base_spawn_interval = 55
-        min_spawn_interval = 15
-        difficulty = int(1 + (base_spawn_interval - spawn_interval) / (base_spawn_interval - min_spawn_interval) * 9)
-        return max(1, min(10, difficulty))
-
-    def _try_spawn_enemy(self, spawn_timer, spawn_interval, enemies):
-        """Generate a new enemy when the timer reaches the spawn interval."""
-        spawn_timer += 1
-        if spawn_timer >= spawn_interval:
-            spawn_timer = 0
-            if len(enemies) < self.MAX_ENEMIES:
-                enemies.append(Enemy(self))
-        return spawn_timer
-
-    def show_text_center(self, text, font, color, y):
-        """在屏幕中央显示文字"""
-        s = font.render(text, True, color)
-        self.screen.blit(s, (self.WIDTH // 2 - s.get_width() // 2, y))
-    
     def level_select_screen(self):
         """关卡选择界面"""
         return self.interfaces.level_select_screen()
@@ -635,340 +162,63 @@ class Game:
         """开始界面"""
         return self.interfaces.start_screen()
     
-    def handle_events(self):
+    def handle_events(self, dev_context=None):
         """处理游戏事件"""
-        # 处理事件，但不清空事件队列
+        # 用逐个轮询的方式处理事件，避免一次性清空事件队列。
         event = pygame.event.poll()
         while event:
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
+            if self.runtime_tools and self.runtime_tools.handle_event(event, dev_context):
+                event = pygame.event.poll()
+                continue
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if self.confirm_exit_screen():
                         pygame.quit(); sys.exit()
                     return "resume_game"
-            # 鼠标点击检测
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if self.RETURN_BUTTON_RECT.collidepoint(pygame.mouse.get_pos()):
+                mouse_pos = pygame.mouse.get_pos()
+                if self.runtime_tools and hasattr(self.runtime_tools, "translate_game_mouse_pos"):
+                    mouse_pos = self.runtime_tools.translate_game_mouse_pos(mouse_pos)
+                if self.RETURN_BUTTON_RECT.collidepoint(mouse_pos):
                     return "main_menu"
             event = pygame.event.poll()
         return None
     
-    def update_entities(self, bullets, enemies, particles, player):
-        """更新游戏实体"""
-        # 更新子弹
-        bullets[:] = [b for b in bullets if not b.update()]
+    def draw_game(self, player, bullets, enemies, particles, scroll, level=None, score_target=None, spawn_interval=None, endless_difficulty=None, powerups=None, dev_context=None):
+        """按固定层级绘制当前帧。"""
+        self.renderer.draw_background(scroll)
         
-        # 更新陨石
-        enemies[:] = [e for e in enemies if not e.update()]
-        
-        # 更新粒子
-        particles = self.update_particles(particles)
-        if len(particles) > self.MAX_PARTICLES:
-            particles = particles[-self.MAX_PARTICLES:]
-        
-        # 玩家无敌状态由Player类自己更新
-        
-        return particles
-
-    def update_powerups(self, powerups):
-        """更新道具，移除掉出屏幕的道具。"""
-        powerups[:] = [powerup for powerup in powerups if not powerup.update()]
-
-    def _drop_powerup(self, powerups, enemy, difficulty):
-        """在陨石被击碎的位置掉落道具。"""
-        if powerups is None:
-            return
-
-        drop_chance = max(0.05, 0.50 - max(0, difficulty - 1) * 0.005)
-        if random.random() > drop_chance:
-            return
-
-        kind = random.choices(
-            ["score", "shield", "repair"],
-            weights=[0.20, 0.35, 0.45],
-            k=1
-        )[0]
-        powerups.append(PowerUp(enemy.x + enemy.W // 2, enemy.y + enemy.H // 2, kind))
-
-    def _apply_powerup(self, player, powerup):
-        """应用玩家拾取到的道具效果。"""
-        if powerup.kind == "repair":
-            player.hp = min(player.actual_max_hp, player.hp + REPAIR_HEAL_AMOUNT)
-            log(f"拾取维修道具：血量={player.hp}/{player.actual_max_hp}")
-        elif powerup.kind == "score":
-            player.score += SCORE_POWERUP_AMOUNT
-            log(f"拾取加分道具：当前分数={player.score}")
-        elif powerup.kind == "shield":
-            player.shield = min(player.max_shield, player.shield + SHIELD_POWERUP_AMOUNT)
-            log(f"拾取护盾道具：护盾={player.shield}/{player.max_shield}")
-
-    def handle_powerup_collisions(self, powerups, player):
-        """检测玩家拾取道具。"""
-        player_rect = pygame.Rect(int(player.x), int(player.y), player.W, player.H)
-        for powerup in powerups[:]:
-            if player_rect.colliderect(powerup.rect):
-                self._apply_powerup(player, powerup)
-                powerups.remove(powerup)
-    
-    def _damage_player(self, player, enemy):
-        damage_min, damage_max = self.METEORITE_DAMAGE_RANGES[enemy.kind]
-        damage = random.randint(damage_min, damage_max)
-        original_damage = damage
-        if player.shield > 0:
-            absorbed = min(player.shield, damage)
-            player.shield -= absorbed
-            damage -= absorbed
-            log(f"护盾抵消伤害：-{absorbed}，剩余护盾={player.shield}")
-
-        player.hp = max(0, player.hp - damage)
-
-        #减少的血量上限最大为玩家基础血量上限的75%
-        max_reduce_max_hp = player.max_hp * 3 / 4
-        player.reduce_max_hp = min(max_reduce_max_hp, player.reduce_max_hp + original_damage * 0.2) 
-        player.actual_max_hp = player.max_hp - player.reduce_max_hp
-        player.hp = min(player.hp, player.actual_max_hp)
-
-        if player.hp <= 0:
-            player.lives -= 1
-            if player.lives > 0:
-                player.reduce_max_hp = 0
-                player.actual_max_hp = player.max_hp
-                player.hp = player.actual_max_hp
-            player.invincible = 120
-            player.can_shoot = False
-            return original_damage, True
-
-        player.invincible = 45
-        return original_damage, False
-
-    def handle_collisions(self, bullets, enemies, particles, player, difficulty=1, powerups=None):
-        """处理碰撞检测"""
-        # 限制碎裂体和概率扩展，避免高级关卡数量爆炸式增长
-        clamped_difficulty = min(max(difficulty, 1), 12)
-        base_probability = 0.5
-        max_probability = 0.9
-        spawn_probability = min(max_probability, base_probability + (clamped_difficulty - 1) * 0.1)
-        piece_multiplier = 1 + min(1.5, (clamped_difficulty - 1) * 0.1)
-        # 碰撞检测：玩家子弹 vs 敌机
-        for b in bullets[:]:
-            for e in enemies[:]:
-                # 首先进行矩形碰撞检测（快速筛选），稍微扩大检测范围以防止子弹穿过
-                expanded_e_x = e.x - 5
-                expanded_e_y = e.y - 5
-                expanded_e_w = e.W + 10
-                expanded_e_h = e.H + 10
-                
-                if b.x + b.W > expanded_e_x and b.x < expanded_e_x + expanded_e_w and b.y + b.H > expanded_e_y and b.y < expanded_e_y + expanded_e_h:
-                    bullet_cx = b.x + b.W // 2
-                    bullet_cy = b.y + b.H // 2
-                    collision_x = bullet_cx
-                    collision_y = bullet_cy
-                    # 子弹与陨石的碰撞检测（使用mask）
-                    if e.meteorite_img:
-                        try:
-                            center_x = e.x + e.W // 2
-                            center_y = e.y + e.H // 2
-                            
-                            if hasattr(e, 'rotated_mask') and e.rotated_mask is not None and e.rotated_rect is not None:
-                                rotated_mask = e.rotated_mask
-                                rotated_rect = e.rotated_rect
-                            else:
-                                sc = self.SIZE_SCALE[e.kind]
-                                img_width, img_height = e.meteorite_img.get_size()
-                                scaled_width = int(img_width * sc)
-                                scaled_height = int(img_height * sc)
-                                scaled_img = pygame.transform.smoothscale(e.meteorite_img, (scaled_width, scaled_height))
-                                rotation_deg = int(e.rotation * 180 / math.pi)
-                                rotated_img = pygame.transform.rotate(scaled_img, rotation_deg)
-                                rotated_mask = pygame.mask.from_surface(rotated_img)
-                                rotated_rect = rotated_img.get_rect(center=(center_x, center_y))
-                            
-                            offset_x = int(b.x) - rotated_rect.left
-                            offset_y = int(b.y) - rotated_rect.top
-                            
-                            bullet_mask = getattr(b, "mask", self.BULLET_MASK)
-                            if rotated_mask.overlap(bullet_mask, (offset_x, offset_y)):
-                                if b in bullets:
-                                    bullets.remove(b)
-                                e.hp -= 1
-                                collision_x = bullet_cx
-                                collision_y = bullet_cy
-                                particles += self.make_explosion(collision_x, collision_y, n=8, r_range=(2, 6))
-                        except (pygame.error, ValueError, MemoryError) as ex:
-                            log(f"子弹-陨石像素遮罩碰撞失败 (种类{e.kind}): {ex}")
-                            bullet_cx = b.x + b.W // 2
-                            bullet_cy = b.y + b.H // 2
-                            center_x = e.x + e.W // 2
-                            center_y = e.y + e.H // 2
-                            dist = math.sqrt((bullet_cx - center_x)**2 + (bullet_cy - center_y)**2)
-                            if dist < max(e.W, e.H) // 2:
-                                if b in bullets:
-                                    bullets.remove(b)
-                                e.hp -= 1
-                                particles += self.make_explosion(bullet_cx, bullet_cy, n=8, r_range=(2, 6))
-                    # 检查陨石是否被击碎
-                        if e.hp <= 0:
-                            # 爆炸效果（在碰撞点）
-                            particles += self.make_explosion(collision_x, collision_y, n=30, r_range=(5, 15))
-                            # 根据陨石大小给予不同分数
-                            player.score += self.SIZE_SCORE[e.kind]
-                            self._drop_powerup(powerups, e, difficulty)
-                            
-                            # 生成小陨石：根据难度调整概率和数量
-                            if e.kind > 1:  # 只有大于第二小的陨石才会碎裂
-                                # 生成小陨石的概率：根据难度调整
-                                if random.random() < spawn_probability:
-                                    # 计算生成小陨石的数量，根据难度调整
-                                    base_max_pieces = int(min(4, e.kind * 1.5))
-                                    base_min_pieces = max(1, e.kind - 1)
-                                    max_pieces = max(1, min(4, int(base_max_pieces * piece_multiplier)))
-                                    min_pieces = max(1, min(max_pieces, int(base_min_pieces * piece_multiplier * 0.6)))
-                                    if min_pieces > max_pieces:
-                                        min_pieces = max_pieces
-                                    piece_count = random.randint(min_pieces, max_pieces)
-                                    
-                                    # 生成小陨石
-                                    for _ in range(piece_count):
-                                        # 新陨石必须比原陨石小（小于原陨石等级）
-                                        new_kind = random.randint(0, e.kind - 1)
-                                        # 计算新陨石的位置（在原陨石附近）
-                                        new_x = e.x + random.randint(-e.W//4, e.W//4)
-                                        new_y = e.y + random.randint(-e.H//4, e.H//4)
-                                        # 创建新陨石并继承父陨石图片，确保碎裂后真正更小
-                                        new_enemy = Enemy(self, kind=new_kind, meteorite_img=e.meteorite_img)
-                                        new_enemy.x = new_x
-                                        new_enemy.y = new_y
-                                        # 调整新陨石的速度：向下方-90~90度内的随机角度，速度为原速度的2.5倍
-                                        # 计算向下方的随机角度（-90~90度，即-pi/2到pi/2弧度）
-                                        angle = random.uniform(-math.pi/2, math.pi/2)
-                                        # 计算原速度的大小
-                                        original_speed = math.sqrt(e.vx**2 + e.vy**2)
-                                        # 新速度为原速度的1.75倍
-                                        new_speed = original_speed * 1.75
-                                        # 根据角度计算新的速度分量
-                                        new_enemy.vx = new_speed * math.sin(angle)  # 水平方向
-                                        new_enemy.vy = new_speed * math.cos(angle)  # 垂直方向（向下）
-                                        # 确保y方向速度为正（向下）
-                                        if new_enemy.vy < 0:
-                                            new_enemy.vy = -new_enemy.vy
-                                        enemies.append(new_enemy)
-                            
-                            enemies.remove(e)
-                    break
-        
-        # 碰撞检测：陨石 vs 玩家
-        if player.invincible == 0:  # 只有当玩家不在无敌状态时才检测碰撞
-            for e in enemies[:]:
-                # 首先进行矩形碰撞检测（快速筛选）
-                if player.x + player.W > e.x and player.x < e.x + e.W and player.y + player.H > e.y and player.y < e.y + e.H:
-                    # 玩家与陨石的碰撞检测（使用mask）
-                    if e.meteorite_img:
-                        try:
-                            if hasattr(e, 'rotated_mask') and e.rotated_mask is not None and e.rotated_rect is not None:
-                                rotated_mask = e.rotated_mask
-                                rotated_rect = e.rotated_rect
-                            else:
-                                sc = self.SIZE_SCALE[e.kind]
-                                img_width, img_height = e.meteorite_img.get_size()
-                                scaled_width = int(img_width * sc)
-                                scaled_height = int(img_height * sc)
-                                scaled_img = pygame.transform.smoothscale(e.meteorite_img, (scaled_width, scaled_height))
-                                rotation_deg = int(e.rotation * 180 / math.pi)
-                                rotated_img = pygame.transform.rotate(scaled_img, rotation_deg)
-                                rotated_mask = pygame.mask.from_surface(rotated_img)
-                                rotated_rect = rotated_img.get_rect(center=(e.x + e.W // 2, e.y + e.H // 2))
-                            
-                            offset_x = int(player.x) - int(rotated_rect.left)
-                            offset_y = int(player.y) - int(rotated_rect.top)
-                            collision_detected = self.PLAYER_MASK.overlap(rotated_mask, (offset_x, offset_y))
-                            
-                            if collision_detected:
-                                explosion_x = e.x + e.W // 2
-                                explosion_y = e.y + e.H // 2
-                                particles += self.make_explosion(explosion_x, explosion_y, n=40, r_range=(8, 20))
-                                log(f"飞机被陨石砸到（像素遮罩碰撞）！当前分数：{player.score}")
-                                damage, died = self._damage_player(player, e)
-                                log(f"玩家被 {e.kind} 级陨石击中：扣除 {damage} 点血量，当前血量={player.hp}/{player.max_hp}，剩余命数={player.lives}")
-                                enemies.remove(e)
-                                break
-                            else:
-                                center_x = e.x + e.W // 2
-                                center_y = e.y + e.H // 2
-                                player_cx = player.x + player.W // 2
-                                player_cy = player.y + player.H // 2
-                                dist = math.sqrt((player_cx - center_x)**2 + (player_cy - center_y)**2)
-                                collision_radius = max(e.W, e.H) * 0.75
-                                if dist < collision_radius:
-                                    explosion_x = e.x + e.W // 2
-                                    explosion_y = e.y + e.H // 2
-                                    particles += self.make_explosion(explosion_x, explosion_y, n=40, r_range=(8, 20))
-                                    log(f"飞机被陨石砸到（距离碰撞）！当前分数：{player.score}")
-                                    damage, died = self._damage_player(player, e)
-                                    log(f"玩家被 {e.kind} 级陨石击中：扣除 {damage} 点血量，当前血量：{player.hp}/{player.max_hp}，剩余命数：{player.lives}")
-                                    enemies.remove(e)
-                                    break
-                        except (pygame.error, ValueError, MemoryError, IndexError) as ex:
-                            log(f"玩家-陨石碰撞异常 (种类{e.kind}): {ex}, 使用距离检测")
-                            center_x = e.x + e.W // 2
-                            center_y = e.y + e.H // 2
-                            player_cx = player.x + player.W // 2
-                            player_cy = player.y + player.H // 2
-                            dist = math.sqrt((player_cx - center_x)**2 + (player_cy - center_y)**2)
-                            collision_radius = max(e.W, e.H) * 0.75
-                            if dist < collision_radius:
-                                explosion_x = e.x + e.W // 2
-                                explosion_y = e.y + e.H // 2
-                                particles += self.make_explosion(explosion_x, explosion_y, n=40, r_range=(8, 20))
-                                log(f"飞机被陨石砸到（异常恢复）！当前分数：{player.score}")
-                                damage, died = self._damage_player(player, e)
-                                log(f"玩家被 {e.kind} 级陨石击中：扣除 {damage} 点血量，当前血量：{player.hp}/{player.max_hp}，剩余命数：{player.lives}")
-                                enemies.remove(e)
-                                break
-        else:
-            # 无敌状态：陨石直接穿过玩家
-            pass
-        
-        return particles
-    
-    def draw_game(self, player, bullets, enemies, particles, scroll, level=None, score_target=None, spawn_interval=None, endless_difficulty=None, powerups=None):
-        """绘制游戏界面"""
-        # 绘制背景
-        self.draw_background(scroll)
-        
-        # 绘制子弹
         for b in bullets:
             b.draw(self.screen)
         
-        # 绘制陨石
         for e in enemies:
             e.draw(self.screen)
 
-        # 绘制道具
         if powerups:
             for powerup in powerups:
                 powerup.draw(self.screen, self.font_s_bold)
         
-        # 绘制爆炸效果
-        self.draw_explosion(self.screen, particles)
-        
-        # 绘制玩家
+        self.effects.draw_explosion(self.screen, particles)
         player.draw(self.screen)
         
-        # 绘制HUD
         if level is not None and score_target is not None:
-            self.draw_hud(player, level, score_target)
+            self.renderer.draw_hud(player, level, score_target)
         else:
-            # 无尽模式HUD
             if spawn_interval is None:
                 spawn_interval = 55
-            self.draw_endless_hud(player, spawn_interval, endless_difficulty)
+            self.renderer.draw_endless_hud(player, spawn_interval, endless_difficulty)
+        if self.runtime_tools:
+            self.runtime_tools.draw_overlay(self.screen, dev_context)
     
     def game_screen(self, level):
-        self.current_level = level
         """游戏主界面"""
+        self.current_level = level
         log(f"开始关卡 {level}")
         player = Player(self)
+        if self.runtime_tools and hasattr(self.runtime_tools, "prepare_player"):
+            self.runtime_tools.prepare_player(player)
         bullets = []
         enemies = []
         particles = []
@@ -977,12 +227,12 @@ class Game:
         spawn_timer = 0
         self.reset_bullet_group_timer()
         
-        # 进入新关时先锁定空格，避免上一屏空格按下状态导致直接发射
+        # 锁定上一屏残留的空格按下状态，避免进入关卡后立刻开火。
         ignore_space = pygame.key.get_pressed()[pygame.K_SPACE]
         
-        # 根据关卡号动态计算难度
-        spawn_interval = self._calculate_level_spawn_interval(level)
-        score_target = self._calculate_score_target(level)
+        # 关卡节奏和通关目标由规则模块统一计算。
+        spawn_interval = calculate_level_spawn_interval(level)
+        score_target = calculate_score_target(level)
         log(f"关卡 {level} 配置：生成间隔={spawn_interval}，目标分数={score_target}")
         
         running = True
@@ -990,9 +240,17 @@ class Game:
             self.clock.tick(self.FPS)
             scroll += 1
             self.update_bullet_group()
+            dev_context = {
+                "player": player,
+                "bullets": bullets,
+                "enemies": enemies,
+                "particles": particles,
+                "powerups": powerups,
+                "difficulty": level,
+            }
             
             # 事件处理
-            result = self.handle_events()
+            result = self.handle_events(dev_context)
             if result == "main_menu":
                 return "main_menu"
             if result == "resume_game":
@@ -1003,23 +261,21 @@ class Game:
             player.update(keys)
             if keys[pygame.K_SPACE]:
                 if not ignore_space:
-                    self._player_shoot(player, bullets)
+                    self.systems.player_shoot(player, bullets)
             else:
                 ignore_space = False
             
-            # 生成敌机
-            spawn_timer = self._try_spawn_enemy(spawn_timer, spawn_interval, enemies)
+            # 生成、更新、碰撞与道具逻辑交给规则系统。
+            spawn_timer = self.systems.try_spawn_enemy(spawn_timer, spawn_interval, enemies)
             
-            # 更新游戏实体
-            particles = self.update_entities(bullets, enemies, particles, player)
-            self.update_powerups(powerups)
+            particles = self.systems.update_entities(bullets, enemies, particles, player)
+            self.systems.update_powerups(powerups)
             
-            # 碰撞检测，传入难度参数
-            particles = self.handle_collisions(bullets, enemies, particles, player, difficulty=level, powerups=powerups)
-            self.handle_powerup_collisions(powerups, player)
+            particles = self.systems.handle_collisions(bullets, enemies, particles, player, difficulty=level, powerups=powerups)
+            self.systems.handle_powerup_collisions(powerups, player)
             
-            # 绘制
-            self.draw_game(player, bullets, enemies, particles, scroll, level, score_target, powerups=powerups)
+            # 绘制入口保留在主流程，具体绘制实现交给渲染器、特效和实体。
+            self.draw_game(player, bullets, enemies, particles, scroll, level, score_target, powerups=powerups, dev_context=dev_context)
             
             pygame.display.flip()
             
@@ -1052,6 +308,8 @@ class Game:
         log("开始无尽模式")
         self.current_level = 100
         player = Player(self)
+        if self.runtime_tools and hasattr(self.runtime_tools, "prepare_player"):
+            self.runtime_tools.prepare_player(player)
         player.is_new_high_score = False
         bullets = []
         enemies = []
@@ -1062,16 +320,16 @@ class Game:
         spawn_timer = 0
         self.reset_bullet_group_timer()
         
-        # 进入无尽模式时先锁定空格，避免上一屏空格按下状态导致直接发射
+        # 锁定上一屏残留的空格按下状态，避免进入无尽模式后立刻开火。
         ignore_space = pygame.key.get_pressed()[pygame.K_SPACE]
         
-        # 初始生成间隔
-        endless_difficulty = 90
-        spawn_interval = self._calculate_level_spawn_interval(endless_difficulty)
-        # 难度增加计数器
+        # 无尽模式参数由规则模块提供，主循环只记录当前状态。
+        endless_difficulty = ENDLESS_BASE_DIFFICULTY
+        spawn_interval = calculate_level_spawn_interval(endless_difficulty)
         difficulty_timer = 0
-        # 每1000帧增加一次难度
-        difficulty_increase_interval = 1000
+        difficulty_increase_interval = ENDLESS_DIFFICULTY_INCREASE_INTERVAL
+        previous_high_score = self.high_score
+        next_high_score_checkpoint = calculate_next_high_score_checkpoint(previous_high_score)
         log(f"无尽模式初始配置：生成间隔={spawn_interval}")
         
         running = True
@@ -1080,9 +338,17 @@ class Game:
             scroll += 1
             difficulty_timer += 1
             self.update_bullet_group()
+            dev_context = {
+                "player": player,
+                "bullets": bullets,
+                "enemies": enemies,
+                "particles": particles,
+                "powerups": powerups,
+                "difficulty": endless_difficulty,
+            }
             
             # 事件处理
-            result = self.handle_events()
+            result = self.handle_events(dev_context)
             if result == "main_menu":
                 return "main_menu"
             if result == "resume_game":
@@ -1093,39 +359,39 @@ class Game:
             player.update(keys)
             if keys[pygame.K_SPACE]:
                 if not ignore_space:
-                    self._player_shoot(player, bullets)
+                    self.systems.player_shoot(player, bullets)
             else:
                 ignore_space = False
             
-            # 增加难度
+            # 随时间推进无尽难度，具体增长规则由规则模块决定。
             if difficulty_timer >= difficulty_increase_interval:
                 difficulty_timer = 0
-                endless_difficulty += 1
-                spawn_interval = max(15, spawn_interval - 2)  # 最小间隔为15帧
+                endless_difficulty, spawn_interval = increase_endless_difficulty(endless_difficulty, spawn_interval)
                 log(f"无尽模式难度增加：生成间隔={spawn_interval}")
             
-            # 生成敌机
-            spawn_timer = self._try_spawn_enemy(spawn_timer, spawn_interval, enemies)
+            # 生成、更新、碰撞与道具逻辑交给规则系统。
+            spawn_timer = self.systems.try_spawn_enemy(spawn_timer, spawn_interval, enemies)
             
-            # 更新游戏实体
-            particles = self.update_entities(bullets, enemies, particles, player)
-            self.update_powerups(powerups)
+            particles = self.systems.update_entities(bullets, enemies, particles, player)
+            self.systems.update_powerups(powerups)
             
-            # 计算无尽模式难度
-            # 碰撞检测，传入难度参数
-            particles = self.handle_collisions(bullets, enemies, particles, player, difficulty=endless_difficulty, powerups=powerups)
-            self.handle_powerup_collisions(powerups, player)
-            if self.update_high_score(player.score):
-                player.is_new_high_score = True
+            particles = self.systems.handle_collisions(bullets, enemies, particles, player, difficulty=endless_difficulty, powerups=powerups)
+            self.systems.handle_powerup_collisions(powerups, player)
+            if should_update_high_score_checkpoint(player.score, previous_high_score, next_high_score_checkpoint):
+                if self.update_high_score(player.score):
+                    player.is_new_high_score = True
+                next_high_score_checkpoint = calculate_next_high_score_checkpoint(player.score)
             
-            # 绘制
-            self.draw_game(player, bullets, enemies, particles, scroll, spawn_interval=spawn_interval, endless_difficulty=endless_difficulty, powerups=powerups)
+            # 绘制入口保留在主流程，具体绘制实现交给渲染器、特效和实体。
+            self.draw_game(player, bullets, enemies, particles, scroll, spawn_interval=spawn_interval, endless_difficulty=endless_difficulty, powerups=powerups, dev_context=dev_context)
             
             pygame.display.flip()
             
             # 检查是否游戏结束
             if player.lives <= 0:
                 log(f"无尽模式结束！最终得分：{player.score}")
+                if self.update_high_score(player.score):
+                    player.is_new_high_score = True
                 player.show_high_score = True
                 return player
         
@@ -1137,21 +403,17 @@ class Game:
             result = self.start_screen()
             
             if result == "endless":
-                # 无尽模式
                 result = self.endless_mode()
                 if result == "quit":
                     break
                 if result == "main_menu":
                     continue
-                # 显示游戏结束界面
                 action = self.game_over_screen(result)
                 if action == "quit":
                     break
                 if action == "main_menu":
-                    # 回到主界面
                     continue
             else:
-                # 关卡模式
                 level = result
                 current_level = level
                 
@@ -1164,21 +426,16 @@ class Game:
                     
                     player, next_level = game_result
                     
-                    # 检查是否达到下一关
                     if next_level:
-                        # 显示关卡完成界面
-                        self.level_complete_screen(player, 1000 + (current_level - 1) * 1000)
+                        self.level_complete_screen(player, calculate_score_target(current_level))
                         current_level = next_level
                     else:
-                        # 显示游戏结束界面
                         action = self.game_over_screen(player)
                         if action == "quit":
                             break
                         if action == "main_menu":
-                            # 回到主界面
                             break
                         else:
-                            # 重新开始当前关卡
                             current_level = level
                 
                 if game_result == "quit":

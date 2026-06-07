@@ -40,10 +40,15 @@ class Interfaces:
         paused_frame = self.game.screen.copy()
         fade_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT))
         fade_surf.fill(self.game.COLORS['BLACK'])
+        game_left = 0
+        runtime_tools = getattr(self.game, "runtime_tools", None)
+        if runtime_tools and hasattr(runtime_tools, "get_game_view_left_offset"):
+            game_left = runtime_tools.get_game_view_left_offset()
+        game_center_x = game_left + self.game.WIDTH // 2
         
         selected = 0  # 0: 继续游戏, 1: 退出游戏
         panel_rect = pygame.Rect(0, 0, 430, 250)
-        panel_rect.center = (self.game.WIDTH // 2, self.game.HEIGHT // 2)
+        panel_rect.center = (game_center_x, self.game.HEIGHT // 2)
         continue_rect = pygame.Rect(panel_rect.left + 42, panel_rect.bottom - 78, 155, 48)
         exit_rect = pygame.Rect(panel_rect.right - 197, panel_rect.bottom - 78, 155, 48)
 
@@ -63,7 +68,7 @@ class Interfaces:
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     return selected == 1
                 elif event.key == pygame.K_ESCAPE:
-                    return False  # Esc默认继续游戏
+                    return False  # 退出键默认继续游戏
             if event.type == pygame.MOUSEMOTION:
                 mouse_pos = pygame.mouse.get_pos()
                 if continue_rect.collidepoint(mouse_pos):
@@ -79,7 +84,7 @@ class Interfaces:
 
         def draw_label_center(text, font, color, y):
             label = font.render(text, True, color)
-            self.game.screen.blit(label, (self.game.WIDTH // 2 - label.get_width() // 2, y))
+            self.game.screen.blit(label, (game_center_x - label.get_width() // 2, y))
 
         def draw_dialog_button(rect, text, active, danger=False):
             mouse_hover = rect.collidepoint(pygame.mouse.get_pos())
@@ -109,7 +114,7 @@ class Interfaces:
             
             self.game.screen.blit(paused_frame, (0, 0))
             fade_surf.set_alpha(alpha)
-            self.game.screen.blit(fade_surf, (0, 0))
+            self.game.screen.blit(fade_surf, (game_left, 0))
 
             panel_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
             pygame.draw.rect(panel_surf, (18, 24, 36, 238), panel_surf.get_rect(), border_radius=12)
@@ -119,7 +124,7 @@ class Interfaces:
             # 标题与提示
             draw_label_center("暂停", self.game.font_l, self.game.COLORS['CYAN'], panel_rect.top + 28)
             draw_label_center("要退出当前游戏吗？", self.game.font_m, self.game.COLORS['WHITE'], panel_rect.top + 96)
-            draw_label_center("Esc / N 继续，Y 退出", self.game.font_s, (185, 215, 235), panel_rect.top + 143)
+            draw_label_center("退出键 / N 继续，Y 退出", self.game.font_s, (185, 215, 235), panel_rect.top + 143)
             
             # 按钮
             draw_dialog_button(continue_rect, "继续游戏", selected == 0)
@@ -235,7 +240,7 @@ class Interfaces:
             if result is not None:
                 return result
             
-            self.game.draw_background(scroll)
+            self.game.renderer.draw_background(scroll)
             
             # 背景装饰陨石（半透明）
             rock_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT), pygame.SRCALPHA)
@@ -243,12 +248,12 @@ class Interfaces:
                 r["x"] = (r["x"] + r["vx"]) % self.game.WIDTH
                 r["y"] = (r["y"] + r["vy"]) % self.game.HEIGHT
                 r["rotation"] += r["rotation_speed"]
-                self.game.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=r["img"])
+                self.game.renderer.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=r["img"])
             rock_surf.set_alpha(60)
             self.game.screen.blit(rock_surf, (0, 0))
             
             # 标题
-            self.game.show_text_center("选择关卡", self.game.font_l, self.game.COLORS['CYAN'], 80)
+            self.game.renderer.show_text_center("选择关卡", self.game.font_l, self.game.COLORS['CYAN'], 80)
             
             # 返回按钮
             back_surf = pygame.Surface((100, 40), pygame.SRCALPHA)
@@ -298,7 +303,7 @@ class Interfaces:
             self.game.screen.blit(page_text, (self.game.WIDTH//2 - page_text.get_width()//2, self.game.HEIGHT - 60))
             
             # 提示文字
-            self.game.show_text_center("使用方向键或鼠标选择关卡", self.game.font_s, (180, 220, 255), self.game.HEIGHT - 30)
+            self.game.renderer.show_text_center("使用方向键或鼠标选择关卡", self.game.font_s, (180, 220, 255), self.game.HEIGHT - 30)
             
             pygame.display.flip()
     
@@ -373,7 +378,7 @@ class Interfaces:
             if result is not None:
                 return result
             
-            self.game.draw_background(scroll)
+            self.game.renderer.draw_background(scroll)
             
             # 背景装饰陨石（半透明）
             rock_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT), pygame.SRCALPHA)
@@ -381,7 +386,7 @@ class Interfaces:
                 r["x"] = (r["x"] + r["vx"]) % self.game.WIDTH
                 r["y"] = (r["y"] + r["vy"]) % self.game.HEIGHT
                 r["rotation"] += r["rotation_speed"]
-                self.game.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=r["img"])
+                self.game.renderer.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=r["img"])
             rock_surf.set_alpha(60)
             self.game.screen.blit(rock_surf, (0, 0))
             
@@ -399,7 +404,7 @@ class Interfaces:
                                  (-2,-2,(0,60,120)), (2,-2,(0,60,120))]:
                 s = self.game.font_l.render(title, True, col)
                 self.game.screen.blit(s, (self.game.WIDTH//2 - s.get_width()//2 + dx, 90 + dy))
-            self.game.show_text_center(title, self.game.font_l, self.game.COLORS['CYAN'], 90)
+            self.game.renderer.show_text_center(title, self.game.font_l, self.game.COLORS['CYAN'], 90)
             
             # 分隔线
             line_y = 200
@@ -445,7 +450,7 @@ class Interfaces:
                 # 确保文字在闪烁圆框的正中间
                 # 调整文字位置，使其在圆框中看起来更居中
                 text_y = btn_y + btn_height // 2 - 16
-                self.game.show_text_center("按 Enter / 空格 开始", self.game.font_s, self.game.COLORS['YELLOW'], text_y)
+                self.game.renderer.show_text_center("按 回车 / 空格 开始", self.game.font_s, self.game.COLORS['YELLOW'], text_y)
             
             # 底部版本/装饰
             ver = self.game.font_s.render("v1.0", True, (60, 80, 120))
@@ -482,16 +487,16 @@ class Interfaces:
             fade_surf.set_alpha(alpha)
             self.game.screen.blit(fade_surf, (0, 0))
             
-            self.game.show_text_center("游戏结束", self.game.font_l, self.game.COLORS['RED'], self.game.HEIGHT // 2 - 80)
-            self.game.show_text_center(f"最终得分: {player.score}", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
+            self.game.renderer.show_text_center("游戏结束", self.game.font_l, self.game.COLORS['RED'], self.game.HEIGHT // 2 - 80)
+            self.game.renderer.show_text_center(f"最终得分: {player.score}", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
             prompt_y = self.game.HEIGHT // 2 + 40
             if getattr(player, "show_high_score", False):
                 high_score_text = f"最高记录: {self.game.high_score}"
                 if getattr(player, "is_new_high_score", False):
-                    high_score_text += "  New!"
-                self.game.show_text_center(high_score_text, self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 20)
+                    high_score_text += "  新纪录！"
+                self.game.renderer.show_text_center(high_score_text, self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 20)
                 prompt_y = self.game.HEIGHT // 2 + 60
-            self.game.show_text_center("按 Enter / 空格 回到主界面", self.game.font_s, self.game.COLORS['YELLOW'], prompt_y)
+            self.game.renderer.show_text_center("按 回车 / 空格 回到主界面", self.game.font_s, self.game.COLORS['YELLOW'], prompt_y)
             
             pygame.display.flip()
     
@@ -524,8 +529,8 @@ class Interfaces:
             fade_surf.set_alpha(alpha)
             self.game.screen.blit(fade_surf, (0, 0))
             
-            self.game.show_text_center("关卡完成！", self.game.font_l, self.game.COLORS['GREEN'], self.game.HEIGHT // 2 - 80)
-            self.game.show_text_center(f"得分: {player.score} / {score_target}", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
-            self.game.show_text_center("按 Enter / 空格 进入下一关", self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 40)
+            self.game.renderer.show_text_center("关卡完成！", self.game.font_l, self.game.COLORS['GREEN'], self.game.HEIGHT // 2 - 80)
+            self.game.renderer.show_text_center(f"得分: {player.score} / {score_target}", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
+            self.game.renderer.show_text_center("按 回车 / 空格 进入下一关", self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 40)
             
             pygame.display.flip()

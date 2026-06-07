@@ -4,11 +4,11 @@ import pygame
 import random
 import os
 import math
-from constants import PLAYER_SPEED, PLAYER_SHOOT_CD, BULLET_SPEED, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT, COLORS, HEIGHT
+from constants import PLAYER_SPEED, PLAYER_SHOOT_CD, BULLET_SPEED, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT, COLORS, HEIGHT, POWERUP_TARGET_SIZE
 from utils import clamp
 
 class Player:
-    """玩家类"""
+    """玩家实体：维护位置、生命、护盾、射击冷却和临时强化状态。"""
     SPEED = PLAYER_SPEED
     SHOOT_CD = PLAYER_SHOOT_CD   # 帧（原14帧，加快发射频率）
     
@@ -22,15 +22,18 @@ class Player:
         min_y = game.HEIGHT * 2/3
         self.y = max(min_y, game.HEIGHT - self.H - 10)
         self.lives = 3
-        self.max_hp = 100 - 5 * ((level - 1) // 10)  # 随关卡增加难度，降低玩家基础HP上限
-        self.reduce_max_hp = 0  # 由于受到伤害而减少的HP上限
-        self.actual_max_hp = self.max_hp - self.reduce_max_hp  # 实际的HP上限
+        self.max_hp = 100 - 5 * ((level - 1) // 10)  # 随关卡增加难度，降低玩家基础生命上限
+        self.reduce_max_hp = 0  # 由于受到伤害而减少的生命上限
+        self.actual_max_hp = self.max_hp - self.reduce_max_hp  # 实际的生命上限
         self.hp = self.actual_max_hp
         self.max_shield = self.max_hp * 2
         self.shield = 0
         self.score = 0
-        self.shoot_timer = self.SHOOT_CD  # 进入时有冷却，不立即发射
+        self.shoot_cd = self.SHOOT_CD
+        self.bullet_streams = 1  # 当前弹道数量，拾取弹道道具后增加。
+        self.shoot_timer = self.shoot_cd  # 进入时有冷却，不立即发射
         self.invincible = 0   # 受伤后无敌帧
+        self.god_mode = False  # 开发者模式无敌，不触发受伤闪烁
         self.can_shoot = True  # 是否可以发射子弹
     
     def update(self, keys):
@@ -78,21 +81,21 @@ class Player:
     def try_shoot(self):
         """尝试发射子弹"""
         if self.shoot_timer <= 0 and (self.can_shoot or self.invincible > 0):  # 无敌时可以发射子弹
-            self.shoot_timer = self.SHOOT_CD
+            self.shoot_timer = self.shoot_cd
             return True
         return False
     
     def draw(self, surf):
         """绘制玩家"""
         # 无敌时闪烁
-        if self.invincible > 0 and self.invincible % 4 < 2:
+        if not self.god_mode and self.invincible > 0 and self.invincible % 4 < 2:
             return
         
         # 绘制玩家飞机图片
-        self.game.draw_player(surf, self.x + self.W // 2, self.y + self.H // 2)
+        self.game.renderer.draw_player(surf, self.x + self.W // 2, self.y + self.H // 2)
 
 class Enemy:
-    """敌人类"""
+    """陨石实体：尺寸等级决定尺寸、血量、速度、得分和伤害范围。"""
     def __init__(self, game, kind=None, meteorite_img=None):
         self.game = game
         # 随机生成陨石大小（0-4）
@@ -111,7 +114,7 @@ class Enemy:
         else:
             self.meteorite_img = None
 
-        # 创建图片的mask用于碰撞检测
+        # 创建图片遮罩用于碰撞检测。
         if self.meteorite_img:
             self.meteorite_mask = pygame.mask.from_surface(self.meteorite_img)
         else:
@@ -146,7 +149,7 @@ class Enemy:
         # 生命值：根据大小确定
         self.hp = game.SIZE_HP[self.kind]
         
-        # 预先生成缩放后的陨石图片，用于加速绘制和碰撞检测
+        # 预先生成缩放后的陨石图片，用于加速绘制和碰撞检测。
         if self.meteorite_img:
             self.base_image = pygame.transform.smoothscale(self.meteorite_img, (self.W, self.H))
             self.base_mask = pygame.mask.from_surface(self.base_image)
@@ -167,13 +170,13 @@ class Enemy:
             self._last_rotation_deg = rotation_deg
         self.rotated_rect = self.rotated_img.get_rect(center=(self.x + self.W // 2, self.y + self.H // 2))
     
-    def update(self):
+    def update(self, speed_multiplier=1.0):
         """更新敌人状态"""
         # 更新位置
-        self._update_position()
+        self._update_position(speed_multiplier)
         
         # 更新旋转
-        self._update_rotation()
+        self._update_rotation(speed_multiplier)
         
         # 预先渲染当前帧
         self.prepare_render()
@@ -181,14 +184,14 @@ class Enemy:
         # 边界检测
         return self._check_boundaries()
     
-    def _update_position(self):
+    def _update_position(self, speed_multiplier=1.0):
         """更新敌人位置"""
-        self.y += self.vy
-        self.x += self.vx
+        self.y += self.vy * speed_multiplier
+        self.x += self.vx * speed_multiplier
     
-    def _update_rotation(self):
+    def _update_rotation(self, speed_multiplier=1.0):
         """更新敌人旋转"""
-        self.rotation += self.rotation_speed
+        self.rotation += self.rotation_speed * speed_multiplier
     
     def _check_boundaries(self):
         """检查边界"""
@@ -207,15 +210,16 @@ class Enemy:
         else:
             center_x = self.x + self.W // 2
             center_y = self.y + self.H // 2
-            self.game.draw_enemy(surf, center_x, center_y, size=self.kind, rotation=self.rotation, img=self.meteorite_img)
+            self.game.renderer.draw_enemy(surf, center_x, center_y, size=self.kind, rotation=self.rotation, img=self.meteorite_img)
 
 class Bullet:
-    """子弹类"""
+    """玩家子弹实体：优先使用资源图片，没有图片时使用矩形兜底。"""
     W, H = BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT
     SPEED = BULLET_SPEED
     
-    def __init__(self, x, y, game):
+    def __init__(self, x, y, game, vx=0):
         self.game = game
+        self.vx = vx
         self.image = game.get_bullet_image()
         if self.image:
             self.W, self.H = self.image.get_size()
@@ -240,11 +244,12 @@ class Bullet:
     
     def _update_position(self):
         """更新子弹位置"""
+        self.x += self.vx
         self.y -= self.SPEED
     
     def _check_boundaries(self):
         """检查边界"""
-        if self.y < -self.H:
+        if self.y < -self.H or self.x < -self.W or self.x > self.game.WIDTH:
             return True  # 超出屏幕，需要移除
         return False
     
@@ -253,26 +258,36 @@ class Bullet:
         if self.image:
             surf.blit(self.image, (int(self.x), int(self.y)))
         else:
-            self.game.draw_bullet(surf, self.x + self.W // 2, self.y + self.H // 2, friendly=True)
+            self.game.renderer.draw_bullet(surf, self.x + self.W // 2, self.y + self.H // 2, friendly=True)
 
 
 class PowerUp:
-    """陨石掉落的道具。"""
-    W, H = 32, 32
+    """陨石掉落的道具。
+
+    道具类型决定效果；图片为可选贴图，缺图时使用彩色圆形和中文单字兜底。
+    """
+    W, H = POWERUP_TARGET_SIZE, POWERUP_TARGET_SIZE
     SPEED = 2.7
 
     COLORS_BY_KIND = {
         "repair": (80, 230, 140),
         "score": (255, 215, 85),
         "shield": (95, 205, 255),
+        "rapid_fire": (255, 145, 85),
+        "bullet_stream": (190, 125, 255),
     }
     LABELS_BY_KIND = {
-        "repair": "+",
-        "score": "$",
-        "shield": "S",
+        "repair": "修",
+        "score": "分",
+        "shield": "盾",
+        "rapid_fire": "速",
+        "bullet_stream": "弹",
     }
 
-    def __init__(self, x, y, kind):
+    def __init__(self, x, y, kind, image=None):
+        self.image = image
+        if self.image:
+            self.W, self.H = self.image.get_size()
         self.x = x - self.W // 2
         self.y = y - self.H // 2
         self.kind = kind
@@ -290,6 +305,12 @@ class PowerUp:
 
     def draw(self, surf, font):
         rect = self.rect
+        # 新版道具优先绘制道具图片目录中加载的图片。
+        if self.image:
+            surf.blit(self.image, rect.topleft)
+            return
+
+        # 如果图片缺失，保留旧版圆形图标兜底，方便开发时发现映射问题。
         color = self.COLORS_BY_KIND.get(self.kind, (255, 255, 255))
         pygame.draw.circle(surf, (15, 24, 38), rect.center, self.W // 2)
         pygame.draw.circle(surf, color, rect.center, self.W // 2, 3)
