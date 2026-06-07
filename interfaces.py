@@ -11,6 +11,17 @@ class Interfaces:
     
     def __init__(self, game):
         self.game = game
+
+    def _game_view_left_offset(self):
+        runtime_tools = getattr(self.game, "runtime_tools", None)
+        if runtime_tools and hasattr(runtime_tools, "get_game_view_left_offset"):
+            return runtime_tools.get_game_view_left_offset()
+        return 0
+
+    def _show_game_text_center(self, text, font, color, y):
+        text_surf = font.render(text, True, color)
+        x = self._game_view_left_offset() + self.game.WIDTH // 2 - text_surf.get_width() // 2
+        self.game.screen.blit(text_surf, (x, y))
     
     def _draw_button(self, rect, fill_color, border_color, border_radius=10, text=None, text_color=None, font=None):
         surf = create_button_surface((rect.w, rect.h), fill_color, border_color, border_radius=border_radius)
@@ -40,10 +51,7 @@ class Interfaces:
         paused_frame = self.game.screen.copy()
         fade_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT))
         fade_surf.fill(self.game.COLORS['BLACK'])
-        game_left = 0
-        runtime_tools = getattr(self.game, "runtime_tools", None)
-        if runtime_tools and hasattr(runtime_tools, "get_game_view_left_offset"):
-            game_left = runtime_tools.get_game_view_left_offset()
+        game_left = self._game_view_left_offset()
         game_center_x = game_left + self.game.WIDTH // 2
         
         selected = 0  # 0: 继续游戏, 1: 退出游戏
@@ -463,6 +471,7 @@ class Interfaces:
         alpha = 0
         fade_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT))
         fade_surf.fill(self.game.COLORS['BLACK'])
+        game_left = self._game_view_left_offset()
         
         def event_handler(event):
             if event.type == pygame.KEYDOWN:
@@ -485,26 +494,27 @@ class Interfaces:
                 alpha = min(200, alpha + 5)
             
             fade_surf.set_alpha(alpha)
-            self.game.screen.blit(fade_surf, (0, 0))
+            self.game.screen.blit(fade_surf, (game_left, 0))
             
-            self.game.renderer.show_text_center("游戏结束", self.game.font_l, self.game.COLORS['RED'], self.game.HEIGHT // 2 - 80)
-            self.game.renderer.show_text_center(f"最终得分: {player.score}", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
+            self._show_game_text_center("游戏结束", self.game.font_l, self.game.COLORS['RED'], self.game.HEIGHT // 2 - 80)
+            self._show_game_text_center(f"最终得分: {player.score}", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
             prompt_y = self.game.HEIGHT // 2 + 40
             if getattr(player, "show_high_score", False):
                 high_score_text = f"最高记录: {self.game.high_score}"
                 if getattr(player, "is_new_high_score", False):
                     high_score_text += "  新纪录！"
-                self.game.renderer.show_text_center(high_score_text, self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 20)
+                self._show_game_text_center(high_score_text, self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 20)
                 prompt_y = self.game.HEIGHT // 2 + 60
-            self.game.renderer.show_text_center("按 回车 / 空格 回到主界面", self.game.font_s, self.game.COLORS['YELLOW'], prompt_y)
+            self._show_game_text_center("按 回车 / 空格 回到主界面", self.game.font_s, self.game.COLORS['YELLOW'], prompt_y)
             
             pygame.display.flip()
     
-    def level_complete_screen(self, player, score_target):
+    def level_complete_screen(self, player, score_target, prompt_text="按 回车 / 空格 进入下一关"):
         """关卡完成界面"""
         alpha = 0
         fade_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT))
         fade_surf.fill(self.game.COLORS['BLACK'])
+        game_left = self._game_view_left_offset()
         
         def event_handler(event):
             if event.type == pygame.KEYDOWN:
@@ -527,10 +537,10 @@ class Interfaces:
                 alpha = min(200, alpha + 5)
             
             fade_surf.set_alpha(alpha)
-            self.game.screen.blit(fade_surf, (0, 0))
+            self.game.screen.blit(fade_surf, (game_left, 0))
             
-            self.game.renderer.show_text_center("关卡完成！", self.game.font_l, self.game.COLORS['GREEN'], self.game.HEIGHT // 2 - 80)
-            self.game.renderer.show_text_center(f"得分: {player.score} / {score_target}", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
-            self.game.renderer.show_text_center("按 回车 / 空格 进入下一关", self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 40)
+            self._show_game_text_center("关卡完成！", self.game.font_l, self.game.COLORS['GREEN'], self.game.HEIGHT // 2 - 80)
+            self._show_game_text_center(f"得分: {player.score} / {score_target}", self.game.font_m, self.game.COLORS['WHITE'], self.game.HEIGHT // 2 - 20)
+            self._show_game_text_center(prompt_text, self.game.font_s, self.game.COLORS['YELLOW'], self.game.HEIGHT // 2 + 40)
             
             pygame.display.flip()

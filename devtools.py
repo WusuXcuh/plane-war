@@ -74,6 +74,13 @@ class DeveloperTools:
     def get_game_view_left_offset(self):
         return self.STATUS_PANEL_WIDTH if self.panel_visible else 0
 
+    def disables_high_score(self):
+        return True
+
+    def restore_game_window(self):
+        if self.panel_visible:
+            self._toggle_panel()
+
     def draw_overlay(self, surf, context):
         if not self.enabled or context is None:
             return

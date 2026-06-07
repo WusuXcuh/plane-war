@@ -9,6 +9,7 @@ from constants import (
     HEIGHT,
     MAX_ENEMIES,
     MAX_PARTICLES,
+    MAX_LEVEL,
     METEORITE_DAMAGE_RANGES,
     METEORITE_SIZE_HP,
     METEORITE_SIZE_SCALE,
@@ -126,6 +127,8 @@ class Game:
 
     def update_high_score(self, score):
         """在玩家刷新纪录时保存最高分。"""
+        if self.runtime_tools and getattr(self.runtime_tools, "disables_high_score", lambda: False)():
+            return False
         if score > self.high_score:
             self.high_score = score
             self.save_high_score()
@@ -160,7 +163,12 @@ class Game:
     
     def start_screen(self):
         """开始界面"""
+        self.restore_runtime_tools_view()
         return self.interfaces.start_screen()
+
+    def restore_runtime_tools_view(self):
+        if self.runtime_tools and hasattr(self.runtime_tools, "restore_game_window"):
+            self.runtime_tools.restore_game_window()
     
     def handle_events(self, dev_context=None):
         """处理游戏事件"""
@@ -282,6 +290,8 @@ class Game:
             # 检查是否达到目标分数
             if player.score >= score_target:
                 log(f"关卡 {level} 完成！得分：{player.score}/{score_target}")
+                if level >= MAX_LEVEL:
+                    return player, "all_complete"
                 return player, level + 1
             
             # 检查是否游戏结束
@@ -295,9 +305,9 @@ class Game:
         """游戏结束界面"""
         return self.interfaces.game_over_screen(player)
     
-    def level_complete_screen(self, player, score_target):
+    def level_complete_screen(self, player, score_target, prompt_text="按 回车 / 空格 进入下一关"):
         """关卡完成界面"""
-        return self.interfaces.level_complete_screen(player, score_target)
+        return self.interfaces.level_complete_screen(player, score_target, prompt_text)
     
     def confirm_exit_screen(self):
         """退出确认界面"""
@@ -426,6 +436,13 @@ class Game:
                     
                     player, next_level = game_result
                     
+                    if next_level == "all_complete":
+                        self.level_complete_screen(
+                            player,
+                            calculate_score_target(current_level),
+                            "按 回车 / 空格 回到主界面",
+                        )
+                        break
                     if next_level:
                         self.level_complete_screen(player, calculate_score_target(current_level))
                         current_level = next_level

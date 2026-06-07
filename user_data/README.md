@@ -1,3 +1,5 @@
-# User Data
+# 用户数据
 
-This folder stores user data for the game, such as the endless mode high score.
+这里保存游戏的用户数据。
+
+无尽模式最高记录: 0
