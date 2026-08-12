@@ -65,7 +65,7 @@ class GameSystems:
 
         particles = self.game.effects.update_particles(particles)
         if len(particles) > self.game.MAX_PARTICLES:
-            particles = particles[-self.game.MAX_PARTICLES:]
+            particles = particles[-self.game.MAX_PARTICLES :]
 
         return particles
 
@@ -167,12 +167,7 @@ class GameSystems:
                 expanded_e_w = e.W + 10
                 expanded_e_h = e.H + 10
 
-                if not (
-                    b.x + b.W > expanded_e_x
-                    and b.x < expanded_e_x + expanded_e_w
-                    and b.y + b.H > expanded_e_y
-                    and b.y < expanded_e_y + expanded_e_h
-                ):
+                if not (b.x + b.W > expanded_e_x and b.x < expanded_e_x + expanded_e_w and b.y + b.H > expanded_e_y and b.y < expanded_e_y + expanded_e_h):
                     continue
 
                 bullet_cx = b.x + b.W // 2
@@ -186,7 +181,7 @@ class GameSystems:
                         center_x = e.x + e.W // 2
                         center_y = e.y + e.H // 2
 
-                        if hasattr(e, 'rotated_mask') and e.rotated_mask is not None and e.rotated_rect is not None:
+                        if hasattr(e, "rotated_mask") and e.rotated_mask is not None and e.rotated_rect is not None:
                             rotated_mask = e.rotated_mask
                             rotated_rect = e.rotated_rect
                         else:
@@ -210,13 +205,13 @@ class GameSystems:
                         log(f"子弹-陨石像素遮罩碰撞失败 (种类{e.kind}): {ex}")
                         center_x = e.x + e.W // 2
                         center_y = e.y + e.H // 2
-                        dist = math.sqrt((bullet_cx - center_x)**2 + (bullet_cy - center_y)**2)
+                        dist = math.sqrt((bullet_cx - center_x) ** 2 + (bullet_cy - center_y) ** 2)
                         if dist < max(e.W, e.H) // 2:
                             hit_confirmed = True
                 else:
                     center_x = e.x + e.W // 2
                     center_y = e.y + e.H // 2
-                    dist = math.sqrt((bullet_cx - center_x)**2 + (bullet_cy - center_y)**2)
+                    dist = math.sqrt((bullet_cx - center_x) ** 2 + (bullet_cy - center_y) ** 2)
                     hit_confirmed = dist < max(e.W, e.H) // 2
 
                 if hit_confirmed:
@@ -254,8 +249,8 @@ class GameSystems:
         for _ in range(random.randint(min_pieces, max_pieces)):
             new_kind = random.randint(0, enemy.kind - 1)
             new_enemy = Enemy(self.game, kind=new_kind, meteorite_img=enemy.meteorite_img)
-            new_enemy.x = enemy.x + random.randint(-enemy.W//4, enemy.W//4)
-            new_enemy.y = enemy.y + random.randint(-enemy.H//4, enemy.H//4)
+            new_enemy.x = enemy.x + random.randint(-enemy.W // 4, enemy.W // 4)
+            new_enemy.y = enemy.y + random.randint(-enemy.H // 4, enemy.H // 4)
 
             angle = random.uniform(0, math.pi * 2)
             original_speed = math.sqrt(enemy.vx**2 + enemy.vy**2)
@@ -268,17 +263,12 @@ class GameSystems:
         """检测陨石与玩家的像素碰撞，异常时回退到距离检测。"""
         game = self.game
         for e in enemies[:]:
-            if not (
-                player.x + player.W > e.x
-                and player.x < e.x + e.W
-                and player.y + player.H > e.y
-                and player.y < e.y + e.H
-            ):
+            if not (player.x + player.W > e.x and player.x < e.x + e.W and player.y + player.H > e.y and player.y < e.y + e.H):
                 continue
 
             if e.meteorite_img:
                 try:
-                    if hasattr(e, 'rotated_mask') and e.rotated_mask is not None and e.rotated_rect is not None:
+                    if hasattr(e, "rotated_mask") and e.rotated_mask is not None and e.rotated_rect is not None:
                         rotated_mask = e.rotated_mask
                         rotated_rect = e.rotated_rect
                     else:
@@ -312,7 +302,7 @@ class GameSystems:
         center_y = enemy.y + enemy.H // 2
         player_cx = player.x + player.W // 2
         player_cy = player.y + player.H // 2
-        dist = math.sqrt((player_cx - center_x)**2 + (player_cy - center_y)**2)
+        dist = math.sqrt((player_cx - center_x) ** 2 + (player_cy - center_y) ** 2)
         return dist < max(enemy.W, enemy.H) * 0.75
 
     def _resolve_player_hit(self, enemies, particles, player, enemy):
@@ -321,9 +311,6 @@ class GameSystems:
         explosion_y = enemy.y + enemy.H // 2
         particles += self.game.effects.make_explosion(explosion_x, explosion_y, n=40, r_range=(8, 20))
         damage, died = self.damage_player(player, enemy)
-        log(
-            f"玩家被 {enemy.kind} 级陨石击中：扣除 {damage} 点血量，"
-            f"当前血量={player.hp}/{player.max_hp}，剩余命数={player.lives}"
-        )
+        log(f"玩家被 {enemy.kind} 级陨石击中：扣除 {damage} 点血量，" f"当前血量={player.hp}/{player.max_hp}，剩余命数={player.lives}")
         if enemy in enemies:
             enemies.remove(enemy)

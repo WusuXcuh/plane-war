@@ -55,8 +55,7 @@ class Renderer:
             ry = x * math.sin(rotation) + y * math.cos(rotation)
             return (cx + int(rx * sc), cy + int(ry * sc))
 
-        pts = [sp(-13, -24), sp(8, -26), sp(24, -10), sp(26, 8),
-               sp(13, 26), sp(-8, 29), sp(-24, 13), sp(-29, -5)]
+        pts = [sp(-13, -24), sp(8, -26), sp(24, -10), sp(26, 8), sp(13, 26), sp(-8, 29), sp(-24, 13), sp(-29, -5)]
         pygame.draw.polygon(surf, rock, pts)
         pygame.draw.polygon(surf, rock_dark, pts, max(1, int(2 * sc)))
 
@@ -71,7 +70,7 @@ class Renderer:
 
     def draw_bullet(self, surf, x, y, friendly=True):
         if friendly:
-            pygame.draw.rect(surf, self.game.COLORS['YELLOW'], (x - 2, y - 8, 4, 16), border_radius=2)
+            pygame.draw.rect(surf, self.game.COLORS["YELLOW"], (x - 2, y - 8, 4, 16), border_radius=2)
             glow = pygame.Surface((10, 20), pygame.SRCALPHA)
             pygame.draw.ellipse(glow, (255, 255, 0, 60), (0, 0, 10, 20))
             surf.blit(glow, (x - 5, y - 10))
@@ -93,7 +92,7 @@ class Renderer:
             pygame.draw.line(surf, rock_lit, (x - 1, y - 3), (x + 2, y - 4), 1)
 
     def draw_background(self, scroll):
-        self.game.screen.fill(self.game.COLORS['BLACK'])
+        self.game.screen.fill(self.game.COLORS["BLACK"])
         for sx, sy, sp in self.game.stars:
             ny = (sy + scroll * sp * 0.5) % self.game.HEIGHT
             b = int(100 + 155 * sp)
@@ -101,17 +100,17 @@ class Renderer:
             pygame.draw.circle(self.game.screen, (b, b, b), (sx, int(ny)), r)
 
     def draw_hud(self, player, level, score_target):
-        txt = self.game.font_s.render(f"得分: {player.score}", True, self.game.COLORS['WHITE'])
+        txt = self.game.font_s.render(f"得分: {player.score}", True, self.game.COLORS["WHITE"])
         self.game.screen.blit(txt, (15, 15))
 
-        txt = self.game.font_s.render(f"关卡: {level}", True, self.game.COLORS['YELLOW'])
+        txt = self.game.font_s.render(f"关卡: {level}", True, self.game.COLORS["YELLOW"])
         self.game.screen.blit(txt, (self.game.WIDTH // 2 - txt.get_width() // 2, 15))
 
-        txt = self.game.font_s.render(f"命: {player.lives}", True, self.game.COLORS['CYAN'])
+        txt = self.game.font_s.render(f"命: {player.lives}", True, self.game.COLORS["CYAN"])
         self.game.screen.blit(txt, (self.game.WIDTH - txt.get_width() - 15, 15))
 
         progress = min(100, int(player.score / score_target * 100))
-        txt = self.game.font_s.render(f"目标: {player.score}/{score_target} ({progress}%)", True, self.game.COLORS['GREEN'])
+        txt = self.game.font_s.render(f"目标: {player.score}/{score_target} ({progress}%)", True, self.game.COLORS["GREEN"])
         self.game.screen.blit(txt, (15, 50))
 
         self._draw_hp_bar(player, 15, 90, 220, 16)
@@ -122,11 +121,11 @@ class Renderer:
         fill_width = int(width * hp_ratio)
 
         if hp_ratio > 0.6:
-            fill_color = self.game.COLORS['GREEN']
+            fill_color = self.game.COLORS["GREEN"]
         elif hp_ratio > 0.3:
-            fill_color = self.game.COLORS['YELLOW']
+            fill_color = self.game.COLORS["YELLOW"]
         else:
-            fill_color = self.game.COLORS['RED']
+            fill_color = self.game.COLORS["RED"]
 
         pygame.draw.rect(self.game.screen, (40, 40, 40), (x, y, width, height), border_radius=4)
         if fill_width > 0:
@@ -142,13 +141,7 @@ class Renderer:
 
             start_x = -height
             while start_x < reduce_width:
-                pygame.draw.line(
-                    reduce_surface,
-                    (26, 26, 30, 210),
-                    (start_x, height),
-                    (start_x + height, 0),
-                    3
-                )
+                pygame.draw.line(reduce_surface, (26, 26, 30, 210), (start_x, height), (start_x + height, 0), 3)
                 start_x += 7
 
             pygame.draw.line(reduce_surface, (150, 150, 155, 180), (0, 0), (0, height), 1)
@@ -161,12 +154,7 @@ class Renderer:
             shield_width = int(width * min(1, shield / max_shield))
             shield_surface = pygame.Surface((shield_width, height), pygame.SRCALPHA)
             pygame.draw.rect(shield_surface, (230, 248, 255, self.game.SHIELD_ALPHA), (0, 0, shield_width, height), border_radius=4)
-            pygame.draw.rect(
-                shield_surface,
-                (255, 255, 255, min(255, self.game.SHIELD_ALPHA + 35)),
-                (0, 1, shield_width, max(1, height // 3)),
-                border_radius=4
-            )
+            pygame.draw.rect(shield_surface, (255, 255, 255, min(255, self.game.SHIELD_ALPHA + 35)), (0, 1, shield_width, max(1, height // 3)), border_radius=4)
             pygame.draw.rect(shield_surface, (255, 255, 255, 245), (0, 0, shield_width, height), width=2, border_radius=4)
             self.game.screen.blit(shield_surface, (x, y))
 
@@ -175,19 +163,19 @@ class Renderer:
             base_interval = calculate_level_spawn_interval(80)
             difficulty_level = 80 + max(0, (base_interval - spawn_interval) // 2)
 
-        txt = self.game.font_s.render(f"难度: {difficulty_level}", True, self.game.COLORS['ORANGE'])
+        txt = self.game.font_s.render(f"难度: {difficulty_level}", True, self.game.COLORS["ORANGE"])
         self.game.screen.blit(txt, (15, 15))
 
-        txt = self.game.font_s.render(f"得分: {player.score}", True, self.game.COLORS['WHITE'])
+        txt = self.game.font_s.render(f"得分: {player.score}", True, self.game.COLORS["WHITE"])
         self.game.screen.blit(txt, (15, 50))
 
-        txt = self.game.font_s.render(f"最高记录: {self.game.high_score}", True, self.game.COLORS['YELLOW'])
+        txt = self.game.font_s.render(f"最高记录: {self.game.high_score}", True, self.game.COLORS["YELLOW"])
         self.game.screen.blit(txt, (15, 85))
 
-        txt = self.game.font_s.render("模式: 无尽", True, self.game.COLORS['MAGENTA'])
+        txt = self.game.font_s.render("模式: 无尽", True, self.game.COLORS["MAGENTA"])
         self.game.screen.blit(txt, (self.game.WIDTH // 2 - txt.get_width() // 2, 15))
 
-        txt = self.game.font_s.render(f"命: {player.lives}", True, self.game.COLORS['CYAN'])
+        txt = self.game.font_s.render(f"命: {player.lives}", True, self.game.COLORS["CYAN"])
         self.game.screen.blit(txt, (self.game.WIDTH - txt.get_width() - 15, 15))
 
         self._draw_hp_bar(player, 15, 120, 220, 16)
@@ -201,11 +189,8 @@ class Renderer:
             border_radius=8,
         )
         self.game.screen.blit(btn_surface, self.game.RETURN_BUTTON_RECT.topleft)
-        return_txt = self.game.font_s.render("返回", True, self.game.COLORS['WHITE'])
-        self.game.screen.blit(return_txt, (
-            self.game.RETURN_BUTTON_RECT.centerx - return_txt.get_width() // 2,
-            self.game.RETURN_BUTTON_RECT.centery - return_txt.get_height() // 2
-        ))
+        return_txt = self.game.font_s.render("返回", True, self.game.COLORS["WHITE"])
+        self.game.screen.blit(return_txt, (self.game.RETURN_BUTTON_RECT.centerx - return_txt.get_width() // 2, self.game.RETURN_BUTTON_RECT.centery - return_txt.get_height() // 2))
 
     def show_text_center(self, text, font, color, y):
         text_surf = font.render(text, True, color)

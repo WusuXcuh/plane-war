@@ -12,7 +12,6 @@ import pygame
 
 from entities import Enemy, PowerUp
 
-
 DEV_POWERUP_KINDS = ["score", "shield", "repair", "rapid_fire", "bullet_stream"]
 
 
@@ -94,12 +93,6 @@ class DeveloperTools:
         if event.key == pygame.K_F10:
             self._toggle_panel()
             return True
-        if event.key == pygame.K_F3:
-            self.enabled = not self.enabled
-            if not self.enabled and self.panel_visible:
-                self._toggle_panel()
-            self.log(f"开发者模式: {'启用' if self.enabled else '关闭'}")
-            return True
 
         if not self.enabled or context is None:
             return False
@@ -129,10 +122,7 @@ class DeveloperTools:
         opening = not self.panel_visible
         old_rect = self._get_window_rect() if opening else self._window_rect_before_panel
         self.panel_visible = opening
-        width = (
-            self.game.WIDTH + self.STATUS_PANEL_WIDTH + self.PANEL_WIDTH
-            if self.panel_visible else self.game.WIDTH
-        )
+        width = self.game.WIDTH + self.STATUS_PANEL_WIDTH + self.PANEL_WIDTH if self.panel_visible else self.game.WIDTH
         self.game.screen = pygame.display.set_mode((width, self.game.HEIGHT))
         pygame.display.set_caption("飞机大战 - 开发者模式" if self.panel_visible else "飞机大战")
         self._move_window_after_resize(width, old_rect, opening)
@@ -199,7 +189,7 @@ class DeveloperTools:
 
     def _shift_game_view(self, surf):
         game_view = surf.subsurface((0, 0, self.game.WIDTH, self.game.HEIGHT)).copy()
-        surf.fill(self.game.COLORS['BLACK'])
+        surf.fill(self.game.COLORS["BLACK"])
         surf.blit(game_view, (self.STATUS_PANEL_WIDTH, 0))
 
     def _draw_status_panel(self, surf, context):
@@ -213,7 +203,6 @@ class DeveloperTools:
         lines = [
             "开发者状态",
             "F10 隐藏面板",
-            "F3 关闭开发者模式",
             "F4 陨石  F5 道具",
             "F6 回满  F7 +1000",
             "F8 清场  F9 碰撞",
@@ -227,24 +216,28 @@ class DeveloperTools:
         if player:
             god = "开" if getattr(player, "god_mode", False) else "关"
             meteor_pause = "开" if self.meteor_pause else "关"
-            lines.extend([
-                "",
-                f"分数: {player.score}",
-                f"血量: {player.hp:.0f}/{player.actual_max_hp:.0f}",
-                f"护盾: {player.shield:.0f}/{player.max_shield:.0f}",
-                f"生命: {player.lives}",
-                f"弹道: {player.bullet_streams}",
-                f"无敌: {god}",
-                f"陨石暂停: {meteor_pause}",
-            ])
+            lines.extend(
+                [
+                    "",
+                    f"分数: {player.score}",
+                    f"血量: {player.hp:.0f}/{player.actual_max_hp:.0f}",
+                    f"护盾: {player.shield:.0f}/{player.max_shield:.0f}",
+                    f"生命: {player.lives}",
+                    f"弹道: {player.bullet_streams}",
+                    f"无敌: {god}",
+                    f"陨石暂停: {meteor_pause}",
+                ]
+            )
         if difficulty is not None:
             collision_debug = "开" if self.game.DEBUG_COLLISION else "关"
-            lines.extend([
-                "",
-                f"难度: {difficulty}",
-                f"碰撞调试: {collision_debug}",
-                f"陨石速度: {self.meteor_speed_multiplier:.1f}x",
-            ])
+            lines.extend(
+                [
+                    "",
+                    f"难度: {difficulty}",
+                    f"碰撞调试: {collision_debug}",
+                    f"陨石速度: {self.meteor_speed_multiplier:.1f}x",
+                ]
+            )
 
         x = 0
         panel_rect = pygame.Rect(x, 0, self.STATUS_PANEL_WIDTH, self.game.HEIGHT)
@@ -265,12 +258,12 @@ class DeveloperTools:
         )
 
         y = 18
-        line_height = self.game.font_s.render("测", True, self.game.COLORS['WHITE']).get_height() + 4
+        line_height = self.game.font_s.render("测", True, self.game.COLORS["WHITE"]).get_height() + 4
         for index, line in enumerate(lines):
             if not line:
                 y += line_height // 2
                 continue
-            color = self.game.COLORS['CYAN'] if index == 0 else (190, 220, 235)
+            color = self.game.COLORS["CYAN"] if index == 0 else (190, 220, 235)
             font = self.game.font_s_bold if index == 0 else self.game.font_s
             text = font.render(line, True, color)
             surf.blit(text, (x + 18, y))
@@ -283,7 +276,7 @@ class DeveloperTools:
         pygame.draw.rect(surf, (14, 18, 26), panel_rect)
         pygame.draw.line(surf, (70, 180, 220), (x, 0), (x, self.game.HEIGHT), 2)
 
-        title = self.game.font_s_bold.render("开发者面板", True, self.game.COLORS['CYAN'])
+        title = self.game.font_s_bold.render("开发者面板", True, self.game.COLORS["CYAN"])
         surf.blit(title, (x + 18, 18))
 
         player = context.get("player")
@@ -348,7 +341,7 @@ class DeveloperTools:
             y += 24
 
     def _draw_info(self, surf, x, y, text):
-        label = self.game.font_s.render(text, True, self.game.COLORS['WHITE'])
+        label = self.game.font_s.render(text, True, self.game.COLORS["WHITE"])
         surf.blit(label, (x, y))
 
     def _draw_small(self, surf, x, y, text):
@@ -366,7 +359,7 @@ class DeveloperTools:
             border = (115, 225, 255) if hovered else (70, 145, 180)
         pygame.draw.rect(surf, fill, rect, border_radius=6)
         pygame.draw.rect(surf, border, rect, width=1, border_radius=6)
-        label = self.game.font_s.render(text, True, self.game.COLORS['WHITE'])
+        label = self.game.font_s.render(text, True, self.game.COLORS["WHITE"])
         surf.blit(label, (rect.centerx - label.get_width() // 2, rect.centery - label.get_height() // 2))
 
     def _slider(self, surf, key, rect, value, minimum, maximum):

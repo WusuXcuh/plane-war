@@ -4,7 +4,7 @@
 普通玩家直接运行普通入口文件（main.py）。
 """
 
-from main import Game
+from game import Game
 from devtools import DeveloperTools
 
 
