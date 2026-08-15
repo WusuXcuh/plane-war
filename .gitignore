@@ -1,2 +1,20 @@
+# Python 缓存
 __pycache__/
-*.pyc
+*.py[cod]
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 编辑器与 IDE
+.vscode/
+.idea/
+*.swp
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 最高分记录
+user_data/*

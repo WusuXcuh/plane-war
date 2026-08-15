@@ -3,25 +3,20 @@
 这里处理射击、实体更新、道具、伤害和碰撞。主流程负责调度，具体规则放在这里。
 """
 
-import datetime
 import math
 import random
 
 import pygame
 
-from constants import (
+from plane_war.core.constants import (
     BULLET_STREAM_SPACING,
     RAPID_FIRE_CD_MULTIPLIER,
     REPAIR_HEAL_AMOUNT,
     SCORE_POWERUP_RATIO,
     SHIELD_POWERUP_AMOUNT,
 )
-from entities import Bullet, Enemy, PowerUp
-
-
-def log(message):
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] {message}")
+from plane_war.core.logs import log
+from plane_war.world.entities import Bullet, Enemy, PowerUp
 
 
 class GameSystems:
@@ -178,41 +173,16 @@ class GameSystems:
 
                 if e.meteorite_img:
                     try:
-                        center_x = e.x + e.W // 2
-                        center_y = e.y + e.H // 2
-
-                        if hasattr(e, "rotated_mask") and e.rotated_mask is not None and e.rotated_rect is not None:
-                            rotated_mask = e.rotated_mask
-                            rotated_rect = e.rotated_rect
-                        else:
-                            sc = game.SIZE_SCALE[e.kind]
-                            img_width, img_height = e.meteorite_img.get_size()
-                            scaled_img = pygame.transform.smoothscale(
-                                e.meteorite_img,
-                                (int(img_width * sc), int(img_height * sc)),
-                            )
-                            rotation_deg = int(e.rotation * 180 / math.pi)
-                            rotated_img = pygame.transform.rotate(scaled_img, rotation_deg)
-                            rotated_mask = pygame.mask.from_surface(rotated_img)
-                            rotated_rect = rotated_img.get_rect(center=(center_x, center_y))
-
+                        rotated_mask, rotated_rect = self._rotated_mask_and_rect(e)
                         offset_x = int(b.x) - rotated_rect.left
                         offset_y = int(b.y) - rotated_rect.top
                         bullet_mask = getattr(b, "mask", game.BULLET_MASK)
-                        if rotated_mask.overlap(bullet_mask, (offset_x, offset_y)):
-                            hit_confirmed = True
+                        hit_confirmed = bool(rotated_mask.overlap(bullet_mask, (offset_x, offset_y)))
                     except (pygame.error, ValueError, MemoryError) as ex:
                         log(f"子弹-陨石像素遮罩碰撞失败 (种类{e.kind}): {ex}")
-                        center_x = e.x + e.W // 2
-                        center_y = e.y + e.H // 2
-                        dist = math.sqrt((bullet_cx - center_x) ** 2 + (bullet_cy - center_y) ** 2)
-                        if dist < max(e.W, e.H) // 2:
-                            hit_confirmed = True
+                        hit_confirmed = self._point_near_enemy(bullet_cx, bullet_cy, e)
                 else:
-                    center_x = e.x + e.W // 2
-                    center_y = e.y + e.H // 2
-                    dist = math.sqrt((bullet_cx - center_x) ** 2 + (bullet_cy - center_y) ** 2)
-                    hit_confirmed = dist < max(e.W, e.H) // 2
+                    hit_confirmed = self._point_near_enemy(bullet_cx, bullet_cy, e)
 
                 if hit_confirmed:
                     if b in bullets:
@@ -236,6 +206,33 @@ class GameSystems:
             self._handle_player_meteorite_collisions(enemies, particles, player)
 
         return particles
+
+    def _rotated_mask_and_rect(self, enemy):
+        """取陨石当前帧的旋转遮罩和包围矩形。
+
+        陨石实体每帧会预先生成这两样；万一还没生成（例如刚构造出来），
+        这里现场算一次，保证碰撞检测不会因为缺少遮罩而漏判。
+        """
+        rotated_mask = getattr(enemy, "rotated_mask", None)
+        rotated_rect = getattr(enemy, "rotated_rect", None)
+        if rotated_mask is not None and rotated_rect is not None:
+            return rotated_mask, rotated_rect
+
+        scale = self.game.SIZE_SCALE[enemy.kind]
+        img_width, img_height = enemy.meteorite_img.get_size()
+        scaled_img = pygame.transform.smoothscale(
+            enemy.meteorite_img,
+            (int(img_width * scale), int(img_height * scale)),
+        )
+        rotated_img = pygame.transform.rotate(scaled_img, int(enemy.rotation * 180 / math.pi))
+        center = (enemy.x + enemy.W // 2, enemy.y + enemy.H // 2)
+        return pygame.mask.from_surface(rotated_img), rotated_img.get_rect(center=center)
+
+    def _point_near_enemy(self, x, y, enemy):
+        """距离碰撞兜底：判断一个点是否落进陨石的近似圆范围。"""
+        center_x = enemy.x + enemy.W // 2
+        center_y = enemy.y + enemy.H // 2
+        return math.hypot(x - center_x, y - center_y) < max(enemy.W, enemy.H) // 2
 
     def _spawn_meteorite_fragments(self, enemies, enemy, piece_multiplier):
         """把大陨石拆成更小的陨石碎片。"""
@@ -268,21 +265,7 @@ class GameSystems:
 
             if e.meteorite_img:
                 try:
-                    if hasattr(e, "rotated_mask") and e.rotated_mask is not None and e.rotated_rect is not None:
-                        rotated_mask = e.rotated_mask
-                        rotated_rect = e.rotated_rect
-                    else:
-                        sc = game.SIZE_SCALE[e.kind]
-                        img_width, img_height = e.meteorite_img.get_size()
-                        scaled_img = pygame.transform.smoothscale(
-                            e.meteorite_img,
-                            (int(img_width * sc), int(img_height * sc)),
-                        )
-                        rotation_deg = int(e.rotation * 180 / math.pi)
-                        rotated_img = pygame.transform.rotate(scaled_img, rotation_deg)
-                        rotated_mask = pygame.mask.from_surface(rotated_img)
-                        rotated_rect = rotated_img.get_rect(center=(e.x + e.W // 2, e.y + e.H // 2))
-
+                    rotated_mask, rotated_rect = self._rotated_mask_and_rect(e)
                     offset_x = int(player.x) - int(rotated_rect.left)
                     offset_y = int(player.y) - int(rotated_rect.top)
                     collision_detected = game.PLAYER_MASK.overlap(rotated_mask, (offset_x, offset_y))
@@ -297,13 +280,15 @@ class GameSystems:
                         break
 
     def _player_near_enemy(self, player, enemy):
-        """距离碰撞兜底，避免遮罩异常时玩家完全不受撞击。"""
+        """距离碰撞兜底，避免遮罩异常时玩家完全不受撞击。
+
+        判定半径比子弹的兜底更宽松，因为玩家飞机本身有体积。
+        """
         center_x = enemy.x + enemy.W // 2
         center_y = enemy.y + enemy.H // 2
         player_cx = player.x + player.W // 2
         player_cy = player.y + player.H // 2
-        dist = math.sqrt((player_cx - center_x) ** 2 + (player_cy - center_y) ** 2)
-        return dist < max(enemy.W, enemy.H) * 0.75
+        return math.hypot(player_cx - center_x, player_cy - center_y) < max(enemy.W, enemy.H) * 0.75
 
     def _resolve_player_hit(self, enemies, particles, player, enemy):
         """统一处理玩家被某个陨石击中的爆炸、扣血和移除陨石。"""

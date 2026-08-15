@@ -9,17 +9,24 @@ import random
 
 import pygame
 
-from constants import BULLET_TARGET_HEIGHT, BULLET_TARGET_WIDTH, PLAYER_IMAGE, POWERUP_TARGET_SIZE
-from entities import Bullet
+from plane_war.core.constants import (
+    BULLET_TARGET_HEIGHT,
+    BULLET_TARGET_WIDTH,
+    PLAYER_IMAGE_NAME,
+    PLAYER_TARGET_WIDTH,
+    POWERUP_TARGET_SIZE,
+)
+from plane_war.paths import BULLETS_DIR, LEVEL_BUTTON_DIR, METEORITE_DIR, PLANE_DIR, POWERUP_DIR
+from plane_war.world.entities import Bullet
 
-# 道具类型到道具图片目录中具体文件名的映射。
-# 文件名可以是中文；游戏逻辑内部仍使用固定字符串标识，方便规则系统判断效果。
+# 道具类型到道具图片文件名的映射。
+# 左边的固定字符串是游戏逻辑内部使用的道具标识，规则系统靠它判断效果。
 POWERUP_IMAGE_FILES = {
-    "score": "加分道具.png",
-    "shield": "护盾道具.png",
-    "repair": "治疗道具.png",
-    "rapid_fire": "加快射速.png",
-    "bullet_stream": "增加弹道.png",
+    "score": "score.png",
+    "shield": "shield.png",
+    "repair": "repair.png",
+    "rapid_fire": "rapid_fire.png",
+    "bullet_stream": "bullet_stream.png",
 }
 
 
@@ -49,15 +56,13 @@ class AssetManager:
     这里也保存子弹图片组的轮换状态，因为“当前使用哪组子弹图”属于资源层状态。
     """
 
-    def __init__(self, game, base_dir):
+    def __init__(self, game):
         self.game = game
-        self.base_dir = base_dir
         self.bullet_images = []
         self.bullet_image_groups = {}
         self.bullet_group_indexes = {}
         self.current_bullet_group = None
         self.bullet_switch_timer = 0
-        self.level_button_images = {}
 
     def load_font(self, size):
         """优先使用系统中文字体，失败时回退到默认字体。
@@ -91,29 +96,25 @@ class AssetManager:
 
         高度按原图比例计算，避免飞机图片被压扁或拉伸。
         """
-        path = os.path.join(self.base_dir, PLAYER_IMAGE)
-        raw = pygame.image.load(path).convert_alpha()
+        raw = pygame.image.load(PLANE_DIR / PLAYER_IMAGE_NAME).convert_alpha()
         original_width, original_height = raw.get_size()
-        target_width = 60
-        target_height = int(target_width / (original_width / original_height))
-        return pygame.transform.smoothscale(raw, (target_width, target_height))
+        target_height = int(PLAYER_TARGET_WIDTH / (original_width / original_height))
+        return pygame.transform.smoothscale(raw, (PLAYER_TARGET_WIDTH, target_height))
 
     def load_meteorite_images(self):
         """加载陨石原图。
 
         这里不提前缩放，因为不同尺寸等级和旋转角度会在实体/渲染器中按需处理。
         """
-        meteorite_dir = os.path.join(self.base_dir, "pictures/meteorite")
         images = {}
-        if not os.path.exists(meteorite_dir):
+        if not METEORITE_DIR.exists():
             return images
 
-        for img_file in sorted(os.listdir(meteorite_dir)):
+        for img_file in sorted(os.listdir(METEORITE_DIR)):
             if not img_file.lower().endswith(".png"):
                 continue
             try:
-                path = os.path.join(meteorite_dir, img_file)
-                images[img_file] = pygame.image.load(path).convert_alpha()
+                images[img_file] = pygame.image.load(METEORITE_DIR / img_file).convert_alpha()
             except Exception:
                 pass
         return images
@@ -121,24 +122,23 @@ class AssetManager:
     def load_bullet_images(self):
         """加载玩家子弹图片，支持按子文件夹分组。
 
-        如果 pictures/bullets 下有子文件夹，每个子文件夹就是一个轮换组；
+        如果子弹图片目录下有子文件夹，每个子文件夹就是一个轮换组；
         如果没有子文件夹，则所有图片都归入默认组。
         """
-        bullet_dir = os.path.join(self.base_dir, "pictures/bullets")
         self.bullet_images = []
         self.bullet_image_groups = {}
         self.bullet_group_indexes = {}
         self.current_bullet_group = None
         self.bullet_switch_timer = 0
 
-        if not os.path.exists(bullet_dir):
+        if not BULLETS_DIR.exists():
             return
 
-        image_groups = self._collect_bullet_image_groups(bullet_dir)
+        image_groups = self._collect_bullet_image_groups(BULLETS_DIR)
         for group_name, image_files in image_groups.items():
             group_images = []
             for img_file in image_files:
-                image = self._load_bullet_image(bullet_dir, img_file)
+                image = self._load_bullet_image(BULLETS_DIR, img_file)
                 if image:
                     group_images.append(image)
                     self.bullet_images.append(image)
@@ -158,11 +158,12 @@ class AssetManager:
         return image
 
     def load_level_button_template(self):
-        """加载关卡按钮的模板底图（button.png）。"""
-        level_button_dir = os.path.join(self.base_dir, "pictures/level button")
-        path = os.path.join(level_button_dir, "button.png")
+        """加载关卡按钮的模板底图（button.png）。
 
-        if not os.path.exists(path):
+        关卡选择界面上的 100 个按钮共用这一张底图，缩放后再叠关卡数字。
+        """
+        path = LEVEL_BUTTON_DIR / "button.png"
+        if not path.exists():
             return None
 
         try:
@@ -171,36 +172,18 @@ class AssetManager:
         except Exception:
             return None
 
-    def load_level_button_image(self, level_num):
-        """加载单个关卡按钮图片（已废弃，保留兼容性）。"""
-        # 现在直接返回模板图片即可
-        return None
-
-    def load_level_button_images(self):
-        """加载关卡选择界面的按钮图片。现在只加载模板底图。"""
-        level_button_dir = os.path.join(self.base_dir, "pictures/level button")
-        if not os.path.exists(level_button_dir):
-            return {}
-
-        # 只返回模板底图
-        template = self.load_level_button_template()
-        if template:
-            return {"template": template}
-        return {}
-
     def load_powerup_images(self):
         """加载道具图片，并统一缩放到目标尺寸。
 
         找不到某个道具图片时不会报错，实体绘制会使用圆形图标兜底。
         """
-        powerup_dir = os.path.join(self.base_dir, "pictures/powerup")
         images = {}
-        if not os.path.exists(powerup_dir):
+        if not POWERUP_DIR.exists():
             return images
 
         for kind, filename in POWERUP_IMAGE_FILES.items():
-            path = os.path.join(powerup_dir, filename)
-            if not os.path.exists(path):
+            path = POWERUP_DIR / filename
+            if not path.exists():
                 continue
             try:
                 raw = pygame.image.load(path).convert_alpha()

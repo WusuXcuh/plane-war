@@ -1,18 +1,27 @@
-# 游戏实体类
+"""游戏实体：玩家、陨石、子弹和道具。"""
+
+import math
+import random
 
 import pygame
-import random
-import os
-import math
-from constants import PLAYER_SPEED, PLAYER_SHOOT_CD, BULLET_SPEED, BULLET_TARGET_WIDTH, BULLET_TARGET_HEIGHT, COLORS, HEIGHT, POWERUP_TARGET_SIZE
-from utils import clamp
+
+from plane_war.core.constants import (
+    BULLET_SPEED,
+    BULLET_TARGET_HEIGHT,
+    BULLET_TARGET_WIDTH,
+    HEIGHT,
+    PLAYER_SHOOT_CD,
+    PLAYER_SPEED,
+    POWERUP_TARGET_SIZE,
+)
+from plane_war.core.utils import clamp
 
 
 class Player:
     """玩家实体：维护位置、生命、护盾、射击冷却和临时强化状态。"""
 
     SPEED = PLAYER_SPEED
-    SHOOT_CD = PLAYER_SHOOT_CD  # 帧（原14帧，加快发射频率）
+    SHOOT_CD = PLAYER_SHOOT_CD  # 帧
 
     def __init__(self, game):
         self.game = game

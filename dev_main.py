@@ -4,8 +4,8 @@
 普通玩家直接运行普通入口文件（main.py）。
 """
 
-from game import Game
-from devtools import DeveloperTools
+from plane_war.core.game import Game
+from plane_war.dev.devtools import DeveloperTools
 
 
 def create_developer_tools(game, log_func):
@@ -13,5 +13,4 @@ def create_developer_tools(game, log_func):
 
 
 if __name__ == "__main__":
-    game = Game(runtime_tools_factory=create_developer_tools)
-    game.run()
+    Game(runtime_tools_factory=create_developer_tools).run()

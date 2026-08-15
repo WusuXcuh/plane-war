@@ -36,19 +36,17 @@ RAPID_FIRE_CD_MULTIPLIER = 0.90
 BULLET_STREAM_SPACING = 18
 POWERUP_TARGET_SIZE = 36
 
-# 玩家基础设置。图片会按资源加载模块中的目标宽度缩放，常量主要用于兜底和规则计算。
-PLAYER_WIDTH = 60
-PLAYER_HEIGHT = 72
+# 玩家基础设置。飞机图片会按资源加载模块中的目标宽度等比缩放。
 PLAYER_SPEED = 5
 PLAYER_SHOOT_CD = 8  # 帧
-PLAYER_IMAGE = "pictures/plane/我方飞机.png"
+PLAYER_IMAGE_NAME = "player.png"
+PLAYER_TARGET_WIDTH = 60
 
 # 游戏内“返回”按钮的位置，使用主游戏画布坐标，不包含开发者扩展面板。
 RETURN_BUTTON_RECT = (WIDTH - 115, 50, 100, 40)
 
-# 敌人/粒子数量上限用于防止后期大量陨石和爆炸粒子导致卡顿。
-ENEMY_SPEED = 3
-ENEMY_SPAWN_INTERVAL = 55
+# 陨石/粒子数量上限用于防止后期大量陨石和爆炸粒子导致卡顿。
+# 陨石的生成间隔是按关卡算出来的，公式在 rules.py，不在这里配置。
 MAX_ENEMIES = 40
 MAX_PARTICLES = 120
 

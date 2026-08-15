@@ -1,15 +1,16 @@
-import pygame
+"""游戏总控：搭建子系统、调度界面流程和两个游戏模式。"""
+
 import sys
-import os
-import datetime
-from assets import AssetManager
-from constants import (
+
+import pygame
+
+from plane_war.core.constants import (
     COLORS,
     FPS,
     HEIGHT,
     MAX_ENEMIES,
-    MAX_PARTICLES,
     MAX_LEVEL,
+    MAX_PARTICLES,
     METEORITE_DAMAGE_RANGES,
     METEORITE_SIZE_HP,
     METEORITE_SIZE_SCALE,
@@ -19,27 +20,23 @@ from constants import (
     SHIELD_ALPHA,
     WIDTH,
 )
-from entities import Player
-from effects import Effects
-from interfaces import Interfaces
-from renderer import Renderer
-from rules import (
+from plane_war.core.logs import log
+from plane_war.core.rules import (
     ENDLESS_BASE_DIFFICULTY,
     ENDLESS_DIFFICULTY_INCREASE_INTERVAL,
-    calculate_next_high_score_checkpoint,
     calculate_level_spawn_interval,
+    calculate_next_high_score_checkpoint,
     calculate_score_target,
     increase_endless_difficulty,
     should_update_high_score_checkpoint,
 )
-from storage import HighScoreStore
-from systems import GameSystems
-
-
-def log(message):
-    """输出日志到终端。"""
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] {message}")
+from plane_war.data.storage import HighScoreStore
+from plane_war.ui.asset_manager import AssetManager
+from plane_war.ui.interfaces import Interfaces
+from plane_war.ui.renderer import Renderer
+from plane_war.world.effects import Effects
+from plane_war.world.entities import Player
+from plane_war.world.systems import GameSystems
 
 
 class Game:
@@ -53,6 +50,8 @@ class Game:
         pygame.init()
         # 可选运行时工具由开发者入口注入；普通入口不导入也不依赖开发者代码。
         self.runtime_tools = None
+        # 当前关卡号，玩家实体会按它计算生命上限；无尽模式固定按第 100 关处理。
+        self.current_level = 1
 
         # 基础窗口配置从常量模块读取，并挂到游戏对象上供各子系统统一访问。
         self.WIDTH, self.HEIGHT = WIDTH, HEIGHT
@@ -72,8 +71,7 @@ class Game:
         self.clock = pygame.time.Clock()
 
         # 资源管理器集中处理路径、字体、图片、子弹组和星空数据，游戏对象只保留结果引用。
-        base_dir = os.path.dirname(__file__)
-        self.assets = AssetManager(self, base_dir)
+        self.assets = AssetManager(self)
 
         self.font_s = self.assets.load_font(24)
         self.font_s_bold = self.assets.load_font(24)
@@ -93,15 +91,11 @@ class Game:
         self.METEORITE_IMG_CACHE = self.assets.load_meteorite_images()
         self.SCALED_METEORITE_CACHE = {}
 
-        # 子弹图片仍挂在游戏对象上，兼容子弹实体构造时读取当前子弹贴图的方式。
+        # 子弹图片组的状态由资源管理器自己维护，实体通过 get_bullet_image() 取当前贴图。
         self.assets.load_bullet_images()
-        self.BULLET_IMAGES = self.assets.bullet_images
-        self.BULLET_IMAGE_GROUPS = self.assets.bullet_image_groups
-        self.BULLET_GROUP_INDEXES = self.assets.bullet_group_indexes
         self.POWERUP_IMAGES = self.assets.load_powerup_images()
-        # 加载关卡按钮模板底图
+        # 关卡选择界面的按钮底图，100 个按钮共用这一张。
         self.LEVEL_BUTTON_TEMPLATE = self.assets.load_level_button_template()
-        self.LEVEL_BUTTON_IMAGES = {}
 
         # 星空背景
         self.stars = self.assets.create_stars(self.WIDTH, self.HEIGHT)
@@ -111,7 +105,7 @@ class Game:
         self.MAX_PARTICLES = MAX_PARTICLES
         self.DEBUG_COLLISION = False
         self.METEORITE_DAMAGE_RANGES = METEORITE_DAMAGE_RANGES
-        self.high_score_store = HighScoreStore(base_dir, log)
+        self.high_score_store = HighScoreStore(log)
         self.high_score = self.load_high_score()
 
         # 默认子弹遮罩用于无贴图兜底；有贴图的子弹会在实体里使用自己的遮罩。
@@ -166,7 +160,7 @@ class Game:
         """供子弹创建时获取当前子弹图片。"""
         return self.assets.get_bullet_image()
 
-    def _get_random_meteorite_image(self):
+    def get_random_meteorite_image(self):
         """供菜单背景陨石获取随机贴图。"""
         return self.assets.get_random_meteorite_image(self.METEORITE_IMG_CACHE)
 
@@ -274,8 +268,7 @@ class Game:
         score_target = calculate_score_target(level)
         log(f"关卡 {level} 配置：生成间隔={spawn_interval}，目标分数={score_target}")
 
-        running = True
-        while running:
+        while True:
             self.clock.tick(self.FPS)
             scroll += 1
             self.update_bullet_group()
@@ -330,8 +323,6 @@ class Game:
                 log(f"关卡 {level} 失败！最终得分：{player.score}")
                 return player, None
 
-        return player, None
-
     def game_over_screen(self, player):
         """游戏结束界面"""
         return self.interfaces.game_over_screen(player)
@@ -373,8 +364,7 @@ class Game:
         next_high_score_checkpoint = calculate_next_high_score_checkpoint(previous_high_score)
         log(f"无尽模式初始配置：生成间隔={spawn_interval}")
 
-        running = True
-        while running:
+        while True:
             self.clock.tick(self.FPS)
             scroll += 1
             difficulty_timer += 1
@@ -438,60 +428,44 @@ class Game:
                 player.show_high_score = True
                 return player
 
-        return player
-
     def run(self):
         """游戏主流程。
 
         每轮都先显示主界面，再根据玩家选择进入关卡模式或无尽模式。
-        关卡模式会在内部循环推进关卡；无尽模式结束后直接进入游戏结束界面。
+        关卡模式会在内部循环连续推进关卡；无尽模式结束后直接进入游戏结束界面。
+
+        这个循环没有正常出口：退出游戏统一由事件处理里的退出确认走 sys.exit()，
+        这样不管玩家在哪一屏按退出键，退出路径都是同一条。
         """
         while True:
             result = self.start_screen()
 
             if result == "endless":
-                result = self.endless_mode()
-                if result == "quit":
+                outcome = self.endless_mode()
+                if outcome != "main_menu":
+                    self.game_over_screen(outcome)
+                continue
+
+            # 关卡模式：从玩家选中的关卡开始，通关一关就自动进入下一关。
+            current_level = result
+            while True:
+                game_result = self.game_screen(current_level)
+                if game_result == "main_menu":
                     break
-                if result == "main_menu":
-                    continue
-                action = self.game_over_screen(result)
-                if action == "quit":
+
+                player, next_level = game_result
+
+                if next_level == "all_complete":
+                    self.level_complete_screen(
+                        player,
+                        calculate_score_target(current_level),
+                        "按 回车 / 空格 回到主界面",
+                    )
                     break
-                if action == "main_menu":
-                    continue
-            else:
-                level = result
-                current_level = level
-
-                while True:
-                    game_result = self.game_screen(current_level)
-                    if game_result == "quit":
-                        break
-                    if game_result == "main_menu":
-                        break
-
-                    player, next_level = game_result
-
-                    if next_level == "all_complete":
-                        self.level_complete_screen(
-                            player,
-                            calculate_score_target(current_level),
-                            "按 回车 / 空格 回到主界面",
-                        )
-                        break
-                    if next_level:
-                        self.level_complete_screen(player, calculate_score_target(current_level))
-                        current_level = next_level
-                    else:
-                        action = self.game_over_screen(player)
-                        if action == "quit":
-                            break
-                        if action == "main_menu":
-                            break
-                        else:
-                            current_level = level
-
-                if game_result == "quit":
+                if next_level is None:
+                    # 生命耗尽，看完结算界面就回主界面。
+                    self.game_over_screen(player)
                     break
-        pygame.quit()
+
+                self.level_complete_screen(player, calculate_score_target(current_level))
+                current_level = next_level

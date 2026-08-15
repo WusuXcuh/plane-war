@@ -1,14 +1,21 @@
-# 游戏界面函数
+"""游戏界面流程：开始界面、关卡选择、结算和退出确认。"""
 
-import pygame
 import random
 import sys
-from constants import WIDTH, HEIGHT, COLORS
-from utils import create_button_surface
+
+import pygame
+
+from plane_war.core.constants import MAX_LEVEL
+from plane_war.ui.widgets import create_button_surface
 
 
 class Interfaces:
     """游戏界面类"""
+
+    # 关卡选择界面的分页和按钮布局。
+    LEVELS_PER_PAGE = 10
+    LEVEL_BUTTON_SIZE = 80
+    LEVEL_BUTTON_SELECTED_SIZE = 125
 
     def __init__(self, game):
         self.game = game
@@ -30,6 +37,64 @@ class Interfaces:
         if text and font and text_color:
             label = font.render(text, True, text_color)
             self.game.screen.blit(label, (rect.centerx - label.get_width() // 2, rect.centery - label.get_height() // 2))
+
+    def _draw_nav_button(self, rect, text, font):
+        """绘制关卡选择界面上的蓝色导航按钮（返回、左右翻页）。"""
+        self._draw_button(
+            rect,
+            (0, 60, 120, 180),
+            (0, 160, 255, 200),
+            text=text,
+            text_color=self.game.COLORS["WHITE"],
+            font=font,
+        )
+
+    def _create_deco_rocks(self, count=6):
+        """生成主界面和关卡选择界面共用的背景装饰陨石。
+
+        这些陨石只是背景，不参与碰撞和得分。每个陨石固定一张贴图，避免每帧换图闪烁。
+        """
+        return [
+            {
+                "x": random.randint(0, self.game.WIDTH),
+                "y": random.randint(0, self.game.HEIGHT),
+                "vx": random.uniform(-0.4, 0.4),
+                "vy": random.uniform(0.3, 0.9),
+                "kind": random.randint(0, 1),
+                "rotation": 0,
+                "rotation_speed": random.uniform(0.01, 0.04) * random.choice([1, -1]),
+                "img": self.game.get_random_meteorite_image(),
+            }
+            for _ in range(count)
+        ]
+
+    def _draw_deco_rocks(self, deco_rocks):
+        """推进并绘制背景装饰陨石，整体半透明叠在星空之上。"""
+        rock_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT), pygame.SRCALPHA)
+        for rock in deco_rocks:
+            rock["x"] = (rock["x"] + rock["vx"]) % self.game.WIDTH
+            rock["y"] = (rock["y"] + rock["vy"]) % self.game.HEIGHT
+            rock["rotation"] += rock["rotation_speed"]
+            self.game.renderer.draw_enemy(
+                rock_surf,
+                int(rock["x"]),
+                int(rock["y"]),
+                rock["kind"],
+                rock["rotation"],
+                img=rock["img"],
+            )
+        rock_surf.set_alpha(60)
+        self.game.screen.blit(rock_surf, (0, 0))
+
+    def _level_button_rect(self, index_in_page):
+        """按页内序号算出关卡按钮的位置。
+
+        点击检测和绘制共用这一套布局，改动按钮排布时只需要改这里。
+        """
+        x = 100 + (index_in_page % 5) * 100
+        y = 200 + (index_in_page // 5) * 80
+        size = self.LEVEL_BUTTON_SIZE
+        return pygame.Rect(x - size // 2, y - size // 2, size, size)
 
     def handle_interface_events(self, event_handler=None):
         """处理界面通用事件"""
@@ -139,207 +204,121 @@ class Interfaces:
             pygame.display.flip()
 
     def level_select_screen(self):
-        """关卡选择界面"""
-        scroll = 0
-        blink = 0
-        selected_level = 1
-        max_level = 100  # 100个关卡
-        page = 0  # 当前页码，每页显示10个关卡
+        """关卡选择界面。
 
-        # 生成装饰性陨石（背景用，不参与游戏）
-        deco_rocks = [
-            {
-                "x": random.randint(0, self.game.WIDTH),
-                "y": random.randint(0, self.game.HEIGHT),
-                "vx": random.uniform(-0.4, 0.4),
-                "vy": random.uniform(0.3, 0.9),
-                "kind": random.randint(0, 1),
-                "a": random.uniform(0, 6.28),
-                "rotation": 0,
-                "rotation_speed": random.uniform(0.01, 0.04) * random.choice([1, -1]),
-                "img": self.game._get_random_meteorite_image(),
-            }  # 为每个陨石分配固定图片
-            for _ in range(6)
-        ]
+        返回选中的关卡号；返回 0 表示玩家按了返回，要回到主界面。
+        """
+        scroll = 0
+        selected_level = 1
+        page = 0  # 当前页码，每页显示 LEVELS_PER_PAGE 个关卡
+        per_page = self.LEVELS_PER_PAGE
+        last_page = (MAX_LEVEL - 1) // per_page
+
+        deco_rocks = self._create_deco_rocks()
+
+        back_rect = pygame.Rect(10, 10, 100, 40)
+        left_rect = pygame.Rect(50, self.game.HEIGHT // 2 - 20, 60, 40)
+        right_rect = pygame.Rect(self.game.WIDTH - 110, self.game.HEIGHT // 2 - 20, 60, 40)
+
+        def levels_on_page():
+            """当前页上的关卡号列表。"""
+            first = page * per_page + 1
+            return [level for level in range(first, first + per_page) if level <= MAX_LEVEL]
+
+        def turn_page(delta):
+            """翻页并把选中项移到新一页的第一关，越界时首尾循环。"""
+            nonlocal page, selected_level
+            page = (page + delta) % (last_page + 1)
+            selected_level = page * per_page + 1
+
+        def move_selection(delta):
+            """在当前页内移动选中项，越界时在本页首尾循环。"""
+            nonlocal selected_level
+            levels = levels_on_page()
+            index = levels.index(selected_level) if selected_level in levels else 0
+            selected_level = levels[(index + delta) % len(levels)]
 
         def event_handler(event):
-            nonlocal selected_level, page
+            nonlocal selected_level
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_LEFT or event.key == pygame.K_a:
-                    # 上一页，第一页时跳转到最后一页
-                    if page > 0:
-                        page -= 1
-                    else:
-                        page = (max_level - 1) // 10
-                    selected_level = page * 10 + 1
-                elif event.key == pygame.K_RIGHT or event.key == pygame.K_d:
-                    # 下一页，最后一页时跳转到第一页
-                    if page < (max_level - 1) // 10:
-                        page += 1
-                    else:
-                        page = 0
-                    selected_level = page * 10 + 1
-                elif event.key == pygame.K_UP or event.key == pygame.K_w:
-                    # 上一个关卡，第一关时循环到最后一关
-                    if selected_level > page * 10 + 1:
-                        selected_level -= 1
-                    else:
-                        # 计算当前页的最后一个关卡
-                        last_level = min((page + 1) * 10, max_level)
-                        selected_level = last_level
-                elif event.key == pygame.K_DOWN or event.key == pygame.K_s:
-                    # 下一个关卡，最后一关时循环到第一关
-                    # 计算当前页的最后一个关卡
-                    last_level = min((page + 1) * 10, max_level)
-                    if selected_level < last_level:
-                        selected_level += 1
-                    else:
-                        selected_level = page * 10 + 1
+                if event.key in (pygame.K_LEFT, pygame.K_a):
+                    turn_page(-1)
+                elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                    turn_page(1)
+                elif event.key in (pygame.K_UP, pygame.K_w):
+                    move_selection(-1)
+                elif event.key in (pygame.K_DOWN, pygame.K_s):
+                    move_selection(1)
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                    # 选择关卡
                     return selected_level
                 elif event.key == pygame.K_ESCAPE:
-                    # 返回主界面
                     return 0
-            # 鼠标点击检测
             if event.type == pygame.MOUSEBUTTONDOWN:
-                mouse_x, mouse_y = pygame.mouse.get_pos()
-                # 检测返回按钮
-                back_rect = pygame.Rect(10, 10, 100, 40)
-                if back_rect.collidepoint(mouse_x, mouse_y):
+                mouse_pos = pygame.mouse.get_pos()
+                if back_rect.collidepoint(mouse_pos):
                     return 0
-                # 检测翻页按钮
-                left_rect = pygame.Rect(50, self.game.HEIGHT // 2 - 20, 60, 40)
-                right_rect = pygame.Rect(self.game.WIDTH - 110, self.game.HEIGHT // 2 - 20, 60, 40)
-                if left_rect.collidepoint(mouse_x, mouse_y):
-                    # 点击左箭头，第一页时跳转到最后一页
-                    if page > 0:
-                        page -= 1
-                    else:
-                        page = (max_level - 1) // 10
-                    selected_level = page * 10 + 1
-                elif right_rect.collidepoint(mouse_x, mouse_y):
-                    # 点击右箭头，最后一页时跳转到第一页
-                    if page < (max_level - 1) // 10:
-                        page += 1
-                    else:
-                        page = 0
-                    selected_level = page * 10 + 1
-                # 检测关卡按钮
-                for i in range(10):
-                    level_num = page * 10 + i + 1
-                    if level_num > max_level:
-                        break
-                    x = 100 + (i % 5) * 100
-                    y = 200 + (i // 5) * 80
-                    button_size = 80
-                    level_rect = pygame.Rect(x - button_size // 2, y - button_size // 2, button_size, button_size)
-                    if level_rect.collidepoint(mouse_x, mouse_y):
+                if left_rect.collidepoint(mouse_pos):
+                    turn_page(-1)
+                elif right_rect.collidepoint(mouse_pos):
+                    turn_page(1)
+
+                # 点一次选中关卡，再点一次进入该关卡。
+                for index, level_num in enumerate(levels_on_page()):
+                    if self._level_button_rect(index).collidepoint(mouse_pos):
                         if selected_level == level_num:
-                            # 已经选择了该关卡，直接进入
                             return selected_level
-                        else:
-                            # 选择该关卡，但不进入
-                            selected_level = level_num
+                        selected_level = level_num
             return None
 
         while True:
             self.game.clock.tick(self.game.FPS)
             scroll += 1
-            blink += 1
 
-            # 处理事件
             result = self.handle_interface_events(event_handler)
             if result is not None:
                 return result
 
             self.game.renderer.draw_background(scroll)
+            self._draw_deco_rocks(deco_rocks)
 
-            # 背景装饰陨石（半透明）
-            rock_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT), pygame.SRCALPHA)
-            for r in deco_rocks:
-                r["x"] = (r["x"] + r["vx"]) % self.game.WIDTH
-                r["y"] = (r["y"] + r["vy"]) % self.game.HEIGHT
-                r["rotation"] += r["rotation_speed"]
-                self.game.renderer.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=r["img"])
-            rock_surf.set_alpha(60)
-            self.game.screen.blit(rock_surf, (0, 0))
-
-            # 标题
             self.game.renderer.show_text_center("选择关卡", self.game.font_l, self.game.COLORS["CYAN"], 80)
 
-            # 返回按钮
-            back_surf = pygame.Surface((100, 40), pygame.SRCALPHA)
-            pygame.draw.rect(back_surf, (0, 60, 120, 180), (0, 0, 100, 40), border_radius=10)
-            pygame.draw.rect(back_surf, (0, 160, 255, 200), (0, 0, 100, 40), 2, border_radius=10)
-            self.game.screen.blit(back_surf, (10, 10))
-            back_text = self.game.font_s.render("返回", True, (255, 255, 255))
-            self.game.screen.blit(back_text, (60 - back_text.get_width() // 2, 30 - back_text.get_height() // 2))
+            self._draw_nav_button(back_rect, "返回", self.game.font_s)
+            self._draw_nav_button(left_rect, "←", self.game.font_m)
+            self._draw_nav_button(right_rect, "→", self.game.font_m)
 
-            # 翻页按钮
-            # 左箭头
-            left_surf = pygame.Surface((60, 40), pygame.SRCALPHA)
-            pygame.draw.rect(left_surf, (0, 60, 120, 180), (0, 0, 60, 40), border_radius=10)
-            pygame.draw.rect(left_surf, (0, 160, 255, 200), (0, 0, 60, 40), 2, border_radius=10)
-            self.game.screen.blit(left_surf, (50, self.game.HEIGHT // 2 - 20))
-            left_text = self.game.font_m.render("←", True, (255, 255, 255))
-            self.game.screen.blit(left_text, (80 - left_text.get_width() // 2, self.game.HEIGHT // 2 - left_text.get_height() // 2))
-            # 右箭头
-            right_surf = pygame.Surface((60, 40), pygame.SRCALPHA)
-            pygame.draw.rect(right_surf, (0, 60, 120, 180), (0, 0, 60, 40), border_radius=10)
-            pygame.draw.rect(right_surf, (0, 160, 255, 200), (0, 0, 60, 40), 2, border_radius=10)
-            self.game.screen.blit(right_surf, (self.game.WIDTH - 110, self.game.HEIGHT // 2 - 20))
-            right_text = self.game.font_m.render("→", True, (255, 255, 255))
-            self.game.screen.blit(right_text, (self.game.WIDTH - 80 - right_text.get_width() // 2, self.game.HEIGHT // 2 - right_text.get_height() // 2))
+            for index, level_num in enumerate(levels_on_page()):
+                self._draw_level_button(self._level_button_rect(index).center, level_num, level_num == selected_level)
 
-            # 关卡按钮
-            button_size = 80
-            for i in range(10):
-                level_num = page * 10 + i + 1
-                if level_num > max_level:
-                    break
-                x = 100 + (i % 5) * 100
-                y = 200 + (i // 5) * 80
-
-                # 判断是否选中
-                is_selected = level_num == selected_level
-                current_size = 100 * 1.25 if is_selected else button_size
-
-                # 使用模板底图加数字
-                if self.game.LEVEL_BUTTON_TEMPLATE is not None:
-                    scaled_button = pygame.transform.smoothscale(self.game.LEVEL_BUTTON_TEMPLATE, (current_size, current_size))
-                    rect = scaled_button.get_rect(center=(x, y))
-                    self.game.screen.blit(scaled_button, rect)
-
-                    # 绘制关卡数字
-                    if is_selected:
-                        text = self.game.font_m.render(str(level_num), True, (255, 200, 0))
-                    else:
-                        text = self.game.font_s.render(str(level_num), True, (255, 255, 255))
-
-                    self.game.screen.blit(text, (x - text.get_width() // 2, y - text.get_height() // 2))
-                else:
-                    # 如果没有模板图片，则使用圆形按钮
-                    if is_selected:
-                        # 选中的关卡
-                        pygame.draw.circle(self.game.screen, (255, 200, 0), (x, y), 35)
-                        pygame.draw.circle(self.game.screen, (255, 255, 255), (x, y), 35, 3)
-                        text = self.game.font_s.render(str(level_num), True, (0, 60, 120))
-                    else:
-                        # 未选中的关卡
-                        pygame.draw.circle(self.game.screen, (0, 100, 180), (x, y), 25)
-                        pygame.draw.circle(self.game.screen, (0, 160, 255), (x, y), 25, 2)
-                        text = self.game.font_s.render(str(level_num), True, (180, 220, 255))
-                    self.game.screen.blit(text, (x - text.get_width() // 2, y - text.get_height() // 2))
-
-            # 页码
-            page_text = self.game.font_s.render(f"第 {page + 1} / {((max_level - 1) // 10) + 1} 页", True, (255, 220, 100))
+            page_text = self.game.font_s.render(f"第 {page + 1} / {last_page + 1} 页", True, (255, 220, 100))
             self.game.screen.blit(page_text, (self.game.WIDTH // 2 - page_text.get_width() // 2, self.game.HEIGHT - 60))
 
-            # 提示文字
             self.game.renderer.show_text_center("使用方向键或鼠标选择关卡", self.game.font_s, (180, 220, 255), self.game.HEIGHT - 30)
 
             pygame.display.flip()
+
+    def _draw_level_button(self, center, level_num, is_selected):
+        """绘制一个关卡按钮：优先用模板底图，缺图时退回到圆形按钮。"""
+        x, y = center
+
+        if self.game.LEVEL_BUTTON_TEMPLATE is not None:
+            size = self.LEVEL_BUTTON_SELECTED_SIZE if is_selected else self.LEVEL_BUTTON_SIZE
+            scaled_button = pygame.transform.smoothscale(self.game.LEVEL_BUTTON_TEMPLATE, (size, size))
+            self.game.screen.blit(scaled_button, scaled_button.get_rect(center=center))
+            if is_selected:
+                text = self.game.font_m.render(str(level_num), True, (255, 200, 0))
+            else:
+                text = self.game.font_s.render(str(level_num), True, (255, 255, 255))
+        elif is_selected:
+            pygame.draw.circle(self.game.screen, (255, 200, 0), center, 35)
+            pygame.draw.circle(self.game.screen, (255, 255, 255), center, 35, 3)
+            text = self.game.font_s.render(str(level_num), True, (0, 60, 120))
+        else:
+            pygame.draw.circle(self.game.screen, (0, 100, 180), center, 25)
+            pygame.draw.circle(self.game.screen, (0, 160, 255), center, 25, 2)
+            text = self.game.font_s.render(str(level_num), True, (180, 220, 255))
+
+        self.game.screen.blit(text, (x - text.get_width() // 2, y - text.get_height() // 2))
 
     def start_screen(self):
         """开始界面"""
@@ -347,21 +326,7 @@ class Interfaces:
         blink = 0
         selected_mode = 0  # 0: 关卡模式, 1: 无尽模式
 
-        # 生成装饰性陨石（背景用，不参与游戏）
-        deco_rocks = [
-            {
-                "x": random.randint(0, self.game.WIDTH),
-                "y": random.randint(0, self.game.HEIGHT),
-                "vx": random.uniform(-0.4, 0.4),
-                "vy": random.uniform(0.3, 0.9),
-                "kind": random.randint(0, 1),
-                "a": random.uniform(0, 6.28),
-                "rotation": 0,
-                "rotation_speed": random.uniform(0.01, 0.04) * random.choice([1, -1]),
-                "img": self.game._get_random_meteorite_image(),
-            }  # 为每个陨石分配固定图片
-            for _ in range(6)
-        ]
+        deco_rocks = self._create_deco_rocks()
 
         def event_handler(event):
             nonlocal selected_mode
@@ -420,16 +385,7 @@ class Interfaces:
                 return result
 
             self.game.renderer.draw_background(scroll)
-
-            # 背景装饰陨石（半透明）
-            rock_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT), pygame.SRCALPHA)
-            for r in deco_rocks:
-                r["x"] = (r["x"] + r["vx"]) % self.game.WIDTH
-                r["y"] = (r["y"] + r["vy"]) % self.game.HEIGHT
-                r["rotation"] += r["rotation_speed"]
-                self.game.renderer.draw_enemy(rock_surf, int(r["x"]), int(r["y"]), r["kind"], r["rotation"], img=r["img"])
-            rock_surf.set_alpha(60)
-            self.game.screen.blit(rock_surf, (0, 0))
+            self._draw_deco_rocks(deco_rocks)
 
             # 标题背景光晕
             glow = pygame.Surface((420, 100), pygame.SRCALPHA)
@@ -493,8 +449,12 @@ class Interfaces:
 
             pygame.display.flip()
 
-    def game_over_screen(self, player):
-        """游戏结束界面"""
+    def _result_screen(self, draw_content):
+        """结算界面的公共外壳。
+
+        游戏结束和关卡完成两个界面的骨架完全一样：黑色渐入遮罩、回车/空格回主界面、
+        退出键弹退出确认。差异只有中间那几行文字，所以交给 draw_content 去画。
+        """
         alpha = 0
         fade_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT))
         fade_surf.fill(self.game.COLORS["BLACK"])
@@ -512,7 +472,7 @@ class Interfaces:
 
         while True:
             self.game.clock.tick(self.game.FPS)
-            # 处理事件
+
             result = self.handle_interface_events(event_handler)
             if result is not None:
                 return result
@@ -524,52 +484,38 @@ class Interfaces:
             fade_surf.set_alpha(alpha)
             self.game.screen.blit(fade_surf, (game_left, 0))
 
-            self._show_game_text_center("游戏结束", self.game.font_l, self.game.COLORS["RED"], self.game.HEIGHT // 2 - 80)
-            self._show_game_text_center(f"最终得分: {player.score}", self.game.font_m, self.game.COLORS["WHITE"], self.game.HEIGHT // 2 - 20)
-            prompt_y = self.game.HEIGHT // 2 + 40
+            draw_content()
+
+            pygame.display.flip()
+
+    def game_over_screen(self, player):
+        """游戏结束界面"""
+        center_y = self.game.HEIGHT // 2
+
+        def draw_content():
+            self._show_game_text_center("游戏结束", self.game.font_l, self.game.COLORS["RED"], center_y - 80)
+            self._show_game_text_center(f"最终得分: {player.score}", self.game.font_m, self.game.COLORS["WHITE"], center_y - 20)
+
+            # 只有无尽模式会带上最高记录，带了就要把提示文字往下让一行。
+            prompt_y = center_y + 40
             if getattr(player, "show_high_score", False):
                 high_score_text = f"最高记录: {self.game.high_score}"
                 if getattr(player, "is_new_high_score", False):
                     high_score_text += "  新纪录！"
-                self._show_game_text_center(high_score_text, self.game.font_s, self.game.COLORS["YELLOW"], self.game.HEIGHT // 2 + 20)
-                prompt_y = self.game.HEIGHT // 2 + 60
+                self._show_game_text_center(high_score_text, self.game.font_s, self.game.COLORS["YELLOW"], center_y + 20)
+                prompt_y = center_y + 60
+
             self._show_game_text_center("按 回车 / 空格 回到主界面", self.game.font_s, self.game.COLORS["YELLOW"], prompt_y)
 
-            pygame.display.flip()
+        return self._result_screen(draw_content)
 
     def level_complete_screen(self, player, score_target, prompt_text="按 回车 / 空格 进入下一关"):
         """关卡完成界面"""
-        alpha = 0
-        fade_surf = pygame.Surface((self.game.WIDTH, self.game.HEIGHT))
-        fade_surf.fill(self.game.COLORS["BLACK"])
-        game_left = self._game_view_left_offset()
+        center_y = self.game.HEIGHT // 2
 
-        def event_handler(event):
-            if event.type == pygame.KEYDOWN:
-                if event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                    return "main_menu"
-                if event.key == pygame.K_ESCAPE:
-                    if self.confirm_exit_screen():
-                        pygame.quit()
-                        sys.exit()
-            return None
+        def draw_content():
+            self._show_game_text_center("关卡完成！", self.game.font_l, self.game.COLORS["GREEN"], center_y - 80)
+            self._show_game_text_center(f"得分: {player.score} / {score_target}", self.game.font_m, self.game.COLORS["WHITE"], center_y - 20)
+            self._show_game_text_center(prompt_text, self.game.font_s, self.game.COLORS["YELLOW"], center_y + 40)
 
-        while True:
-            self.game.clock.tick(self.game.FPS)
-            # 处理事件
-            result = self.handle_interface_events(event_handler)
-            if result is not None:
-                return result
-
-            # 渐入
-            if alpha < 200:
-                alpha = min(200, alpha + 5)
-
-            fade_surf.set_alpha(alpha)
-            self.game.screen.blit(fade_surf, (game_left, 0))
-
-            self._show_game_text_center("关卡完成！", self.game.font_l, self.game.COLORS["GREEN"], self.game.HEIGHT // 2 - 80)
-            self._show_game_text_center(f"得分: {player.score} / {score_target}", self.game.font_m, self.game.COLORS["WHITE"], self.game.HEIGHT // 2 - 20)
-            self._show_game_text_center(prompt_text, self.game.font_s, self.game.COLORS["YELLOW"], self.game.HEIGHT // 2 + 40)
-
-            pygame.display.flip()
+        return self._result_screen(draw_content)

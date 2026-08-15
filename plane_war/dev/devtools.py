@@ -5,12 +5,12 @@
 所以开发者快捷键和侧边面板都不可用。
 """
 
-import itertools
 import ctypes
+import itertools
 
 import pygame
 
-from entities import Enemy, PowerUp
+from plane_war.world.entities import Enemy, PowerUp
 
 DEV_POWERUP_KINDS = ["score", "shield", "repair", "rapid_fire", "bullet_stream"]
 

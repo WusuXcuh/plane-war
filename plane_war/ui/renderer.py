@@ -7,8 +7,8 @@ import math
 
 import pygame
 
-from rules import calculate_level_spawn_interval
-from utils import create_button_surface
+from plane_war.core.rules import calculate_level_spawn_interval
+from plane_war.ui.widgets import create_button_surface
 
 
 class Renderer:

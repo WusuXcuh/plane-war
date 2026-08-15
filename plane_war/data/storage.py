@@ -7,6 +7,8 @@
 import os
 import re
 
+from plane_war.paths import USER_DATA_DIR
+
 
 class HighScoreStore:
     """无尽模式最高分存储器。
@@ -14,10 +16,10 @@ class HighScoreStore:
     这个类只关心“从哪里读”和“写成什么格式”，主流程不用知道存档文件结构。
     """
 
-    def __init__(self, base_dir, log_func):
-        self.user_data_dir = os.path.join(base_dir, "user_data")
-        self.readme_file = os.path.join(self.user_data_dir, "README.md")
-        self.old_high_score_file = os.path.join(self.user_data_dir, "high_score.txt")
+    def __init__(self, log_func):
+        self.user_data_dir = USER_DATA_DIR
+        self.readme_file = USER_DATA_DIR / "README.md"
+        self.old_high_score_file = USER_DATA_DIR / "high_score.txt"
         self.log = log_func
 
     def load(self):
