@@ -57,6 +57,7 @@ class AssetManager:
         self.bullet_group_indexes = {}
         self.current_bullet_group = None
         self.bullet_switch_timer = 0
+        self.level_button_images = {}
 
     def load_font(self, size):
         """优先使用系统中文字体，失败时回退到默认字体。
@@ -146,6 +147,46 @@ class AssetManager:
                 self.bullet_group_indexes[group_name] = 0
 
         self.reset_bullet_group_timer()
+
+    def _make_white_transparent(self, image):
+        """用颜色键快速把纯白背景改成透明，速度远快于逐像素循环。"""
+        if image is None:
+            return image
+
+        image = image.convert_alpha()
+        image.set_colorkey((255, 255, 255))
+        return image
+
+    def load_level_button_template(self):
+        """加载关卡按钮的模板底图（button.png）。"""
+        level_button_dir = os.path.join(self.base_dir, "pictures/level button")
+        path = os.path.join(level_button_dir, "button.png")
+
+        if not os.path.exists(path):
+            return None
+
+        try:
+            raw = pygame.image.load(path).convert_alpha()
+            return self._make_white_transparent(raw)
+        except Exception:
+            return None
+
+    def load_level_button_image(self, level_num):
+        """加载单个关卡按钮图片（已废弃，保留兼容性）。"""
+        # 现在直接返回模板图片即可
+        return None
+
+    def load_level_button_images(self):
+        """加载关卡选择界面的按钮图片。现在只加载模板底图。"""
+        level_button_dir = os.path.join(self.base_dir, "pictures/level button")
+        if not os.path.exists(level_button_dir):
+            return {}
+
+        # 只返回模板底图
+        template = self.load_level_button_template()
+        if template:
+            return {"template": template}
+        return {}
 
     def load_powerup_images(self):
         """加载道具图片，并统一缩放到目标尺寸。

@@ -231,8 +231,9 @@ class Interfaces:
                     if level_num > max_level:
                         break
                     x = 100 + (i % 5) * 100
-                    y = 150 + (i // 5) * 80
-                    level_rect = pygame.Rect(x - 30, y - 30, 60, 60)
+                    y = 200 + (i // 5) * 80
+                    button_size = 80
+                    level_rect = pygame.Rect(x - button_size // 2, y - button_size // 2, button_size, button_size)
                     if level_rect.collidepoint(mouse_x, mouse_y):
                         if selected_level == level_num:
                             # 已经选择了该关卡，直接进入
@@ -292,23 +293,44 @@ class Interfaces:
             self.game.screen.blit(right_text, (self.game.WIDTH - 80 - right_text.get_width() // 2, self.game.HEIGHT // 2 - right_text.get_height() // 2))
 
             # 关卡按钮
+            button_size = 80
             for i in range(10):
                 level_num = page * 10 + i + 1
                 if level_num > max_level:
                     break
                 x = 100 + (i % 5) * 100
-                y = 150 + (i // 5) * 80
-                if level_num == selected_level:
-                    # 选中的关卡
-                    pygame.draw.circle(self.game.screen, (255, 200, 0), (x, y), 30)
-                    pygame.draw.circle(self.game.screen, (255, 255, 255), (x, y), 30, 2)
-                    text = self.game.font_m.render(str(level_num), True, (0, 60, 120))
+                y = 200 + (i // 5) * 80
+
+                # 判断是否选中
+                is_selected = level_num == selected_level
+                current_size = 100 * 1.25 if is_selected else button_size
+
+                # 使用模板底图加数字
+                if self.game.LEVEL_BUTTON_TEMPLATE is not None:
+                    scaled_button = pygame.transform.smoothscale(self.game.LEVEL_BUTTON_TEMPLATE, (current_size, current_size))
+                    rect = scaled_button.get_rect(center=(x, y))
+                    self.game.screen.blit(scaled_button, rect)
+
+                    # 绘制关卡数字
+                    if is_selected:
+                        text = self.game.font_m.render(str(level_num), True, (255, 200, 0))
+                    else:
+                        text = self.game.font_s.render(str(level_num), True, (255, 255, 255))
+
+                    self.game.screen.blit(text, (x - text.get_width() // 2, y - text.get_height() // 2))
                 else:
-                    # 未选中的关卡
-                    pygame.draw.circle(self.game.screen, (0, 100, 180), (x, y), 25)
-                    pygame.draw.circle(self.game.screen, (0, 160, 255), (x, y), 25, 2)
-                    text = self.game.font_s.render(str(level_num), True, (180, 220, 255))
-                self.game.screen.blit(text, (x - text.get_width() // 2, y - text.get_height() // 2))
+                    # 如果没有模板图片，则使用圆形按钮
+                    if is_selected:
+                        # 选中的关卡
+                        pygame.draw.circle(self.game.screen, (255, 200, 0), (x, y), 35)
+                        pygame.draw.circle(self.game.screen, (255, 255, 255), (x, y), 35, 3)
+                        text = self.game.font_s.render(str(level_num), True, (0, 60, 120))
+                    else:
+                        # 未选中的关卡
+                        pygame.draw.circle(self.game.screen, (0, 100, 180), (x, y), 25)
+                        pygame.draw.circle(self.game.screen, (0, 160, 255), (x, y), 25, 2)
+                        text = self.game.font_s.render(str(level_num), True, (180, 220, 255))
+                    self.game.screen.blit(text, (x - text.get_width() // 2, y - text.get_height() // 2))
 
             # 页码
             page_text = self.game.font_s.render(f"第 {page + 1} / {((max_level - 1) // 10) + 1} 页", True, (255, 220, 100))
@@ -468,10 +490,6 @@ class Interfaces:
                 # 调整文字位置，使其在圆框中看起来更居中
                 text_y = btn_y + btn_height // 2 - 16
                 self.game.renderer.show_text_center("按 回车 / 空格 开始", self.game.font_s, self.game.COLORS["YELLOW"], text_y)
-
-            # 底部版本/装饰
-            ver = self.game.font_s.render("v1.0", True, (60, 80, 120))
-            self.game.screen.blit(ver, (self.game.WIDTH - ver.get_width() - 10, self.game.HEIGHT - 30))
 
             pygame.display.flip()
 

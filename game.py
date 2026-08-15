@@ -99,6 +99,9 @@ class Game:
         self.BULLET_IMAGE_GROUPS = self.assets.bullet_image_groups
         self.BULLET_GROUP_INDEXES = self.assets.bullet_group_indexes
         self.POWERUP_IMAGES = self.assets.load_powerup_images()
+        # 加载关卡按钮模板底图
+        self.LEVEL_BUTTON_TEMPLATE = self.assets.load_level_button_template()
+        self.LEVEL_BUTTON_IMAGES = {}
 
         # 星空背景
         self.stars = self.assets.create_stars(self.WIDTH, self.HEIGHT)
