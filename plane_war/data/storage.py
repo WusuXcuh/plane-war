@@ -1,9 +1,10 @@
 """本地存档读写。
 
-目前只管理无尽模式最高分。最高分保存在 user_data/README.md 中，
-旧版本的 high_score.txt 仍会作为兼容兜底读取，但新的保存只写 README。
+目前只管理无尽模式最高分。最高分保存在 user_data/high_score.json 中，
+旧版本的 README.md 和 high_score.txt 仍会作为兼容兜底读取，但新的保存只会写入 JSON。
 """
 
+import json
 import os
 import re
 
@@ -18,48 +19,60 @@ class HighScoreStore:
 
     def __init__(self, log_func):
         self.user_data_dir = USER_DATA_DIR
-        self.readme_file = USER_DATA_DIR / "README.md"
+        self.score_file = USER_DATA_DIR / "high_score.json"  # 已将最高分记录由user_data/README.md改为user_data/high_score.json
+        self.old_readme_file = USER_DATA_DIR / "README.md"
         self.old_high_score_file = USER_DATA_DIR / "high_score.txt"
         self.log = log_func
 
     def load(self):
         """读取最高分。
 
-        优先读取 README 中的记录；如果旧版 high_score.txt 还存在，则取两者较大值，
+        以 JSON 存档为主，旧版 README.md 和 high_score.txt 还在时取三者较大值，
         避免迁移过程中意外把玩家旧记录降成 0。
         """
         try:
             os.makedirs(self.user_data_dir, exist_ok=True)
-            readme_score = 0
-            if os.path.exists(self.readme_file):
-                with open(self.readme_file, "r", encoding="utf-8") as f:
-                    match = re.search(r"无尽模式最高记录:\s*(\d+)", f.read())
-                    if match:
-                        readme_score = max(0, int(match.group(1)))
-
-            return max(readme_score, self._load_old_high_score())
+            return max(
+                self._load_json_high_score(),
+                self._load_old_readme_high_score(),
+                self._load_old_high_score(),
+            )
         except (OSError, ValueError) as exc:
             self.log(f"读取最高分失败: {exc}")
             return 0
 
     def save(self, score):
-        """把最高分写回 README。
-
-        README 里已有记录行时原地替换；没有记录行时在文件末尾追加一行。
-        """
+        """把最高分写进 JSON 存档。"""
         try:
             os.makedirs(self.user_data_dir, exist_ok=True)
-            content = self._read_readme()
-            line = f"无尽模式最高记录: {int(score)}"
-            if re.search(r"无尽模式最高记录:\s*\d+", content):
-                content = re.sub(r"无尽模式最高记录:\s*\d+", line, content)
-            else:
-                content = content.rstrip() + "\n\n" + line + "\n"
-
-            with open(self.readme_file, "w", encoding="utf-8") as f:
-                f.write(content)
+            with open(self.score_file, "w", encoding="utf-8") as f:
+                json.dump({"high_score": int(score)}, f, ensure_ascii=False, indent=2)
+                f.write("\n")
         except OSError as exc:
             self.log(f"保存最高分失败: {exc}")
+
+    def _load_json_high_score(self):
+        """读取 JSON 存档；文件损坏时当作没有记录，不影响本次游玩。"""
+        if not os.path.exists(self.score_file):
+            return 0
+
+        try:
+            with open(self.score_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return max(0, int(data.get("high_score", 0)))
+        except (json.JSONDecodeError, AttributeError, TypeError, ValueError) as exc:
+            self.log(f"最高分存档格式异常，已忽略: {exc}")
+            return 0
+
+    def _load_old_readme_high_score(self):
+        """读取旧版 README.md 里的记录行，用于兼容迁移前的存档。"""
+        if not os.path.exists(self.old_readme_file):
+            return 0
+
+        with open(self.old_readme_file, "r", encoding="utf-8") as f:
+            match = re.search(r"无尽模式最高记录:\s*(\d+)", f.read())
+
+        return max(0, int(match.group(1))) if match else 0
 
     def _load_old_high_score(self):
         """读取旧版 high_score.txt，用于兼容迁移前的存档。"""
@@ -68,10 +81,3 @@ class HighScoreStore:
 
         with open(self.old_high_score_file, "r", encoding="utf-8") as f:
             return max(0, int(f.read().strip() or 0))
-
-    def _read_readme(self):
-        """读取 README 内容；文件不存在时返回一个最小可用模板。"""
-        if os.path.exists(self.readme_file):
-            with open(self.readme_file, "r", encoding="utf-8") as f:
-                return f.read()
-        return "# 用户数据\n\n这里保存游戏的用户数据。\n"

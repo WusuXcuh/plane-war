@@ -50,7 +50,7 @@
 
 ### data / dev
 
-- `storage.py` — `HighScoreStore`，最高分读写。存在 `user_data/README.md` 里，旧版 `high_score.txt` 仍会被读取做兼容。
+- `storage.py` — `HighScoreStore`，最高分读写。存在 `user_data/high_score.json` 里，旧版 `README.md` 和 `high_score.txt` 仍会被读取做兼容。
 - `devtools.py` — `DeveloperTools`。通过 `Game(runtime_tools_factory=...)` 注入，`Game` 只通过 `hasattr` 检查可选接口来调用它，所以普通入口不需要这个模块也能跑。
 
 ## 游戏流程

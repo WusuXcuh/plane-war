@@ -79,7 +79,7 @@ plane-war/
 │   │   ├── asset_manager.py 字体和图片加载、子弹图片组轮换
 │   │   └── widgets.py       按钮底图绘制
 │   ├── data/
-│   │   └── storage.py       无尽模式最高分读写
+│   │   └── storage.py       无尽模式最高分读写（已将最高分记录由user_data/README.md改为user_data/high_score.json）
 │   └── dev/
 │       └── devtools.py      开发者面板和调试快捷键
 ├── assets/pictures/         图片资源
@@ -107,7 +107,6 @@ plane-war/
 
 - 关卡选择界面第一次打开时会有短暂卡顿，因为要缩放按钮底图。
 - `DEBUG_COLLISION` 开关（开发者面板 F9）目前只在面板上显示状态，还没有对应的碰撞框可视化绘制。
-- 最高分存在 `user_data/README.md` 里，而这个文件在 Git 跟踪中，所以刷新纪录后 `git status` 会出现改动。
 
 ## 后续可以做的
 

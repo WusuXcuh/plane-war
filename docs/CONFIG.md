@@ -101,7 +101,7 @@ assets/pictures/
 ├── powerup/*.png            文件名与道具标识的映射在 ui/asset_manager.py
 └── level_button/button.png  关卡选择界面 100 个按钮共用
 
-user_data/README.md          无尽模式最高分
+user_data/high_score.json    无尽模式最高分
 ```
 
 文件名请保持 ASCII，中文名和空格在跨平台和某些工具链下会出问题。
