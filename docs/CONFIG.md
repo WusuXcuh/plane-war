@@ -89,6 +89,12 @@
 
 想让游戏更难，改这里比改 `constants.py` 更有效 —— 生成间隔直接决定压力。
 
+## 关卡进度锁定
+
+关卡进度存在 `user_data/level_progress.json`，记录已通关关卡集合。解锁规则：第 N 关通关后解锁第 N+1 关，首次游玩只能选第 1 关。
+
+开发者模式（`dev_main.py`）下所有关卡自动解锁，且通关不写入存档。
+
 ## 资源路径
 
 所有路径都从 [plane_war/paths.py](../plane_war/paths.py) 派生，模块内不再自己拼项目根目录。
@@ -102,6 +108,7 @@ assets/pictures/
 └── level_button/button.png  关卡选择界面 100 个按钮共用
 
 user_data/high_score.json    无尽模式最高分
+user_data/level_progress.json 已通关关卡集合，用于解锁关卡
 ```
 
 文件名请保持 ASCII，中文名和空格在跨平台和某些工具链下会出问题。
@@ -118,4 +125,5 @@ user_data/high_score.json    无尽模式最高分
 | 找不到资源 | 确认在项目根目录运行，且 `assets/pictures/` 完整 |
 | 中文显示成方块 | 见上面「字体」一节，补字体路径 |
 | 最高分没保存 | 确认 `user_data/` 可写；开发者模式下本来就不写盘 |
+| 关卡进度没保存 | 确认 `user_data/` 可写；开发者模式下本来就不写盘 |
 | `ModuleNotFoundError: plane_war` | 必须在项目根目录执行 `python main.py` |

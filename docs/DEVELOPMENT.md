@@ -50,7 +50,7 @@
 
 ### data / dev
 
-- `storage.py` — `HighScoreStore`，最高分读写。存在 `user_data/high_score.json` 里，旧版 `README.md` 和 `high_score.txt` 仍会被读取做兼容。
+- `storage.py` — `HighScoreStore`（最高分读写）+ `LevelProgressStore`（关卡进度存档）。最高分存在 `user_data/high_score.json`；关卡进度存在 `user_data/level_progress.json`，记录已通关关卡集合，用于解锁后续关卡。
 - `devtools.py` — `DeveloperTools`。通过 `Game(runtime_tools_factory=...)` 注入，`Game` 只通过 `hasattr` 检查可选接口来调用它，所以普通入口不需要这个模块也能跑。
 
 ## 游戏流程
@@ -103,7 +103,7 @@ python dev_main.py
 
 面板上还有滑杆可以实时调射击冷却和陨石速度，以及无敌、陨石暂停两个开关。
 
-开发者模式下 `disables_high_score()` 返回 True，最高分不会写盘，避免调试污染正式记录。进入游戏时默认开启无敌。
+开发者模式下 `disables_high_score()` 和 `disables_level_progress()` 都返回 True：最高分和关卡进度都不会写盘，所有关卡都解锁。进入游戏时默认开启无敌。
 
 ## 扩展指南
 

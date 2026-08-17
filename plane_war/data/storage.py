@@ -81,3 +81,38 @@ class HighScoreStore:
 
         with open(self.old_high_score_file, "r", encoding="utf-8") as f:
             return max(0, int(f.read().strip() or 0))
+
+
+class LevelProgressStore:
+    """关卡进度存储器。"""
+
+    def __init__(self, log_func):
+        self.progress_file = USER_DATA_DIR / "level_progress.json"
+        self.log = log_func
+
+    def load(self):
+        """读取已通关关卡集合。"""
+        try:
+            if not os.path.exists(self.progress_file):
+                return set()
+            with open(self.progress_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return set(int(l) for l in data.get("completed_levels", []))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            self.log(f"读取关卡进度失败: {exc}")
+            return set()
+
+    def save(self, completed_levels):
+        """保存已通关关卡集合。"""
+        try:
+            os.makedirs(USER_DATA_DIR, exist_ok=True)
+            with open(self.progress_file, "w", encoding="utf-8") as f:
+                json.dump(
+                    {"completed_levels": sorted(completed_levels)},
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                f.write("\n")
+        except OSError as exc:
+            self.log(f"保存关卡进度失败: {exc}")

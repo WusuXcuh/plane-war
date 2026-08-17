@@ -76,6 +76,10 @@ class DeveloperTools:
     def disables_high_score(self):
         return True
 
+    def disables_level_progress(self):
+        """开发者模式不写入关卡进度，关卡也不会锁定。"""
+        return True
+
     def restore_game_window(self):
         if self.panel_visible:
             self._toggle_panel()

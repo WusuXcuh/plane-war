@@ -30,7 +30,7 @@ from plane_war.core.rules import (
     increase_endless_difficulty,
     should_update_high_score_checkpoint,
 )
-from plane_war.data.storage import HighScoreStore
+from plane_war.data.storage import HighScoreStore, LevelProgressStore
 from plane_war.ui.asset_manager import AssetManager
 from plane_war.ui.interfaces import Interfaces
 from plane_war.ui.renderer import Renderer
@@ -108,6 +108,11 @@ class Game:
         self.high_score_store = HighScoreStore(log)
         self.high_score = self.load_high_score()
 
+        # 关卡进度：记录已通关关卡，用于解锁后续关卡
+        self.progress_store = LevelProgressStore(log)
+        self.completed_levels = self.progress_store.load()
+        log(f"已通关关卡: {sorted(self.completed_levels) if self.completed_levels else '无'}")
+
         # 默认子弹遮罩用于无贴图兜底；有贴图的子弹会在实体里使用自己的遮罩。
         self.BULLET_MASK = self.assets.create_default_bullet_mask()
 
@@ -120,6 +125,20 @@ class Game:
             self.runtime_tools = runtime_tools_factory(self, log)
 
         log("游戏初始化完成")
+
+    def get_unlocked_levels(self):
+        """计算当前已解锁的关卡集合。开发者模式下全部解锁。"""
+        if self.runtime_tools and getattr(self.runtime_tools, "disables_level_progress", lambda: False)():
+            return set(range(1, MAX_LEVEL + 1))
+        unlocked = set()
+        next_unlocked = 1
+        while next_unlocked <= MAX_LEVEL:
+            unlocked.add(next_unlocked)
+            if next_unlocked in self.completed_levels:
+                next_unlocked += 1
+            else:
+                break
+        return unlocked
 
     def load_high_score(self):
         """从存储模块读取最高分。"""
@@ -314,6 +333,10 @@ class Game:
             # 达到目标分数即通关；最高关卡完成后不再生成 101 关。
             if player.score >= score_target:
                 log(f"关卡 {level} 完成！得分：{player.score}/{score_target}")
+                # 保存关卡进度，解锁下一关,开发者模式不写入关卡进度
+                if not (self.runtime_tools and getattr(self.runtime_tools, "disables_level_progress", lambda: False)()):
+                    self.completed_levels.add(level)
+                    self.progress_store.save(self.completed_levels)
                 if level >= MAX_LEVEL:
                     return player, "all_complete"
                 return player, level + 1

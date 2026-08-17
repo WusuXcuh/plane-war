@@ -216,6 +216,9 @@ class Interfaces:
 
         deco_rocks = self._create_deco_rocks()
 
+        # 获取已解锁关卡集合
+        unlocked_levels = self.game.get_unlocked_levels()
+
         back_rect = pygame.Rect(10, 10, 100, 40)
         left_rect = pygame.Rect(50, self.game.HEIGHT // 2 - 20, 60, 40)
         right_rect = pygame.Rect(self.game.WIDTH - 110, self.game.HEIGHT // 2 - 20, 60, 40)
@@ -226,15 +229,21 @@ class Interfaces:
             return [level for level in range(first, first + per_page) if level <= MAX_LEVEL]
 
         def turn_page(delta):
-            """翻页并把选中项移到新一页的第一关，越界时首尾循环。"""
+            """翻页并选中新一页的第一个解锁关卡。"""
             nonlocal page, selected_level
             page = (page + delta) % (last_page + 1)
-            selected_level = page * per_page + 1
+            for l in levels_on_page():
+                if l in unlocked_levels:
+                    selected_level = l
+                    return
+            selected_level = levels_on_page()[0]
 
         def move_selection(delta):
-            """在当前页内移动选中项，越界时在本页首尾循环。"""
+            """在当前页内移动选中项，跳过锁定关卡。"""
             nonlocal selected_level
-            levels = levels_on_page()
+            levels = [l for l in levels_on_page() if l in unlocked_levels]
+            if not levels:
+                return
             index = levels.index(selected_level) if selected_level in levels else 0
             selected_level = levels[(index + delta) % len(levels)]
 
@@ -262,9 +271,11 @@ class Interfaces:
                 elif right_rect.collidepoint(mouse_pos):
                     turn_page(1)
 
-                # 点一次选中关卡，再点一次进入该关卡。
+                # 点一次选中关卡，再点一次进入该关卡（锁定关卡不可点击）。
                 for index, level_num in enumerate(levels_on_page()):
                     if self._level_button_rect(index).collidepoint(mouse_pos):
+                        if level_num not in unlocked_levels:
+                            break
                         if selected_level == level_num:
                             return selected_level
                         selected_level = level_num
@@ -288,7 +299,13 @@ class Interfaces:
             self._draw_nav_button(right_rect, "→", self.game.font_m)
 
             for index, level_num in enumerate(levels_on_page()):
-                self._draw_level_button(self._level_button_rect(index).center, level_num, level_num == selected_level)
+                locked = level_num not in unlocked_levels
+                self._draw_level_button(
+                    self._level_button_rect(index).center,
+                    level_num,
+                    level_num == selected_level,
+                    is_locked=locked,
+                )
 
             page_text = self.game.font_s.render(f"第 {page + 1} / {last_page + 1} 页", True, (255, 220, 100))
             self.game.screen.blit(page_text, (self.game.WIDTH // 2 - page_text.get_width() // 2, self.game.HEIGHT - 60))
@@ -297,9 +314,38 @@ class Interfaces:
 
             pygame.display.flip()
 
-    def _draw_level_button(self, center, level_num, is_selected):
-        """绘制一个关卡按钮：优先用模板底图，缺图时退回到圆形按钮。"""
+    def _draw_level_button(self, center, level_num, is_selected, is_locked=False):
+        """绘制一个关卡按钮。锁定关卡显示为灰色，不可选中。"""
         x, y = center
+
+        if is_locked:
+            if self.game.LEVEL_BUTTON_TEMPLATE is not None:
+                size = self.LEVEL_BUTTON_SIZE
+                scaled_button = pygame.transform.smoothscale(self.game.LEVEL_BUTTON_TEMPLATE, (size, size))
+                dim = pygame.Surface(scaled_button.get_size(), pygame.SRCALPHA)
+                dim.fill((0, 0, 0, 140))
+                scaled_button.blit(dim, (0, 0))
+                self.game.screen.blit(scaled_button, scaled_button.get_rect(center=center))
+            else:
+                pygame.draw.circle(self.game.screen, (70, 70, 70), center, 25)
+                pygame.draw.circle(self.game.screen, (110, 110, 110), center, 25, 2)
+
+            text = self.game.font_s.render(str(level_num), True, (150, 150, 150))
+            self.game.screen.blit(text, (x - text.get_width() // 2, y - text.get_height() // 2))
+            # 锁图标
+            lock_w, lock_h = 20, 14
+            lock_rect = pygame.Rect(x - lock_w // 2, y + 14, lock_w, lock_h)
+            pygame.draw.rect(self.game.screen, (180, 180, 180), lock_rect, border_radius=3)
+            pygame.draw.rect(self.game.screen, (220, 220, 220), lock_rect, 1, border_radius=3)
+            pygame.draw.arc(
+                self.game.screen,
+                (200, 200, 200),
+                (lock_rect.left + 4, lock_rect.top - 6, lock_w - 8, 10),
+                3.14,
+                0,
+                2,
+            )
+            return
 
         if self.game.LEVEL_BUTTON_TEMPLATE is not None:
             size = self.LEVEL_BUTTON_SELECTED_SIZE if is_selected else self.LEVEL_BUTTON_SIZE

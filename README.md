@@ -79,7 +79,7 @@ plane-war/
 │   │   ├── asset_manager.py 字体和图片加载、子弹图片组轮换
 │   │   └── widgets.py       按钮底图绘制
 │   ├── data/
-│   │   └── storage.py       无尽模式最高分读写（已将最高分记录由user_data/README.md改为user_data/high_score.json）
+│   │   └── storage.py       最高分读写 + 关卡进度存档
 │   └── dev/
 │       └── devtools.py      开发者面板和调试快捷键
 ├── assets/pictures/         图片资源
@@ -88,7 +88,7 @@ plane-war/
 │   ├── meteorite/           陨石原图
 │   ├── powerup/             道具图标
 │   └── level_button/        关卡按钮底图
-├── user_data/               本地存档
+├── user_data/               本地存档（最高分、关卡进度）
 └── docs/                    开发文档
     ├── DEVELOPMENT.md       模块职责、数据流、扩展指南
     └── CONFIG.md            配置参数速查
@@ -111,6 +111,8 @@ plane-war/
 ## 已做更改
 
 - 已将无尽模式最高分记录存储改为user_data/high_score.json
+- 新增关卡进度锁定系统：通关第 N 关才能解锁第 N+1 关，进度保存在 user_data/level_progress.json
+- 开发者模式（dev_main.py）不受关卡锁定限制，通关不写入存档
 
 ## 后续可以做的
 
